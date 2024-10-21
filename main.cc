@@ -4,6 +4,8 @@
 
 #include "FtpUtil/ftplib.h"
 
+#include <sstream>
+
 void logCallback(char *str, void *arg, bool out) {
     std::cout << (out ? ">> " : "<< ") << str << std::endl;
 }
@@ -28,6 +30,79 @@ int InitFtpConn(std::string ipaddr, int port)
     ftp.Mkdir("/Documents/test_ftp_dir");
     ftp.Quit();
     return 0;
+}
+
+std::string readConfig(const std::string& filename, const std::string& key) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file: " + filename);
+    }
+
+    std::string line;
+    while (std::getline(file, line)) {
+        size_t pos = line.find('=');
+        if (pos != std::string::npos) {
+            std::string fileKey = line.substr(0, pos);
+            std::string value = line.substr(pos + 1);
+            if (fileKey == key) {
+                return value;
+            }
+        }
+    }
+
+    throw std::runtime_error("Key not found: " + key);
+}
+
+// 写入配置文件
+void writeConfig(const std::string& filename, const std::string& key, const std::string& value) {
+    std::ifstream file(filename);
+    std::stringstream buffer;
+    bool keyFound = false;
+
+    if (file.is_open()) {
+        std::string line;
+        while (std::getline(file, line)) {
+            size_t pos = line.find('=');
+            if (pos != std::string::npos) {
+                std::string fileKey = line.substr(0, pos);
+                if (fileKey == key) {
+                    buffer << key << "=" << value << "\n";
+                    keyFound = true;
+                } else {
+                    buffer << line << "\n";
+                }
+            } else {
+                buffer << line << "\n";
+            }
+        }
+        file.close();
+    }
+
+    if (!keyFound) {
+        buffer << key << "=" << value << "\n";
+    }
+
+    std::ofstream outFile(filename);
+    if (!outFile.is_open()) {
+        throw std::runtime_error("Failed to open file for writing: " + filename);
+    }
+
+    outFile << buffer.str();
+    outFile.close();
+}
+
+// 创建配置文件
+void createConfig(const std::string& filename, const std::vector<std::pair<std::string, std::string>>& keyValuePairs) {
+    std::ofstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to create file: " + filename);
+    }
+
+    for (const auto& pair : keyValuePairs) {
+        file << pair.first << "=" << pair.second << "\n";
+    }
+
+    file.close();
 }
 
 int sum1(int a, int b)
@@ -57,7 +132,10 @@ void funC(int i) {
 
 int main(int argc, char* argv[]) {
 
-    InitFtpConn("123.456.78.109", 12345);
+    std::string server = readConfig("config.conf", "server");
+    int port = std::atoi(readConfig("config.conf", "port").c_str());
+    InitFtpConn(server, port);
+
 
     // ThreadPool& pool = ThreadPool::GetInstance(4);
     // // DataBase& db1 = DataBase::GetInstance("name1", "pwd1");
