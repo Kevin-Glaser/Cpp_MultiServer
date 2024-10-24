@@ -6,6 +6,8 @@
 
 #include <sstream>
 
+#include <mysql/mysql.h>
+
 void logCallback(char *str, void *arg, bool out) {
     std::cout << (out ? ">> " : "<< ") << str << std::endl;
 }
@@ -129,6 +131,46 @@ void funC(int i) {
     std::cout << "Executing funC thread:" << std::this_thread::get_id() << "Executing func" << std::endl;
     std::this_thread::sleep_for(std::chrono::seconds(1));
 }
+
+// 添加到DBUtil里
+struct DatabaseConnection {
+    MYSQL * connection;
+    std::string db_name;
+};
+
+DatabaseConnection connectToDatabase(const std::string& url,
+                                    const std::string& username,
+                                    const std::string& password,
+                                    const std::string& dbName = "") {
+    MYSQL *connection = mysql_init(nullptr);
+
+    if (connection == nullptr) {
+        throw std::runtime_error("Failed to initialize MySQL connection.");
+    }
+
+    MYSQL *conn = nullptr;
+    if (url == "localhost" || url.empty()) {
+        conn = mysql_real_connect(connection, nullptr, username.c_str(), password.c_str(),
+                                  dbName.c_str(), 0, nullptr, 0);
+    } else {
+        conn = mysql_real_connect(connection, url.c_str(), username.c_str(), password.c_str(),
+                                  dbName.c_str(), 0, nullptr, 0);
+    }
+
+    if (conn == nullptr) {
+        std::string error = "Failed to connect to MySQL database: " + std::string(mysql_error(connection));
+        mysql_close(connection);
+        std::cout << error << std::endl;
+    }
+
+    return {connection, dbName};
+}
+
+// 改成类的智能指针
+void disconnectFromDatabase(DatabaseConnection& db) {
+    mysql_close(db.connection);
+}
+
 
 int main(int argc, char* argv[]) {
 
