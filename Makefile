@@ -6,7 +6,7 @@ TARGET = main
 SRC = main.cc ./include/DBUtil/DatabaseUtil.cc ./include/LogUtil/LogUtil.cc ./include/FtpUtil/ftplib.cc
 
 # dynamic library path
-LIBS = -L./lib -lpthread
+LIBS = -L./lib -lpthread -lmysqlcppconn
 
 # xxx.o
 OBJS = main.o DatabaseUtil.o LogUtil.o FtpUtil.o
@@ -15,7 +15,6 @@ all: $(TARGET)
 
 $(TARGET): $(OBJS)
 	$(CXX) $(OBJS) $(LIBS) -o $(TARGET) $(CXXFLAGS)
-	mkdir build
 	mv $(OBJS) ./build
 
 # compile c++ file
@@ -36,4 +35,4 @@ FtpUtil.o: ./include/FtpUtil/ftplib.cc
 # 	$(CC) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -r -f ./build/ ./main
+	rm -r -f ./build/* ./main

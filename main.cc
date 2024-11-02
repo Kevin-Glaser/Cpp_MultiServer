@@ -1,12 +1,9 @@
-#include "DBUtil/DatabaseUtil.h"
+#include "DBUtil/DatabasePoolUtil.h"
 #include "LogUtil/LogUtil.h"
 #include "ThreadPool/ThreadPool.h"
-
 #include "FtpUtil/ftplib.h"
-
 #include <sstream>
 
-#include <mysql/mysql.h>
 
 void logCallback(char *str, void *arg, bool out) {
     std::cout << (out ? ">> " : "<< ") << str << std::endl;
@@ -29,6 +26,7 @@ int InitFtpConn(std::string ipaddr, int port)
         std:: cout << "Cannot login username demo" << ftp.LastResponse() << std::endl;
         ftp.Quit();
     }
+    ftp.Rmdir("/Documents/test_ftp_dir");
     ftp.Mkdir("/Documents/test_ftp_dir");
     ftp.Quit();
     return 0;
@@ -107,70 +105,6 @@ void createConfig(const std::string& filename, const std::vector<std::pair<std::
     file.close();
 }
 
-int sum1(int a, int b)
-{
-   // std::cout << "Executing sum1 on thread:" << std::this_thread::get_id() << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-	return a + b;
-}
-
-int sum2(int a, int b, int c)
-{
-  //  std::cout << "Executing sum2 on thread:" << std::this_thread::get_id() << std::endl;
-	std::this_thread::sleep_for(std::chrono::seconds(1));
-    return a + b + c;
-}
-
-std::string funA(std::string str) {
-    std::cout << "Executing funA on thread:" << std::this_thread::get_id() << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-    return "hello" + str;
-}
-
-void funC(int i) {
-    std::cout << "Executing funC thread:" << std::this_thread::get_id() << "Executing func" << std::endl;
-    std::this_thread::sleep_for(std::chrono::seconds(1));
-}
-
-// 添加到DBUtil里
-struct DatabaseConnection {
-    MYSQL * connection;
-    std::string db_name;
-};
-
-DatabaseConnection connectToDatabase(const std::string& url,
-                                    const std::string& username,
-                                    const std::string& password,
-                                    const std::string& dbName = "") {
-    MYSQL *connection = mysql_init(nullptr);
-
-    if (connection == nullptr) {
-        throw std::runtime_error("Failed to initialize MySQL connection.");
-    }
-
-    MYSQL *conn = nullptr;
-    if (url == "localhost" || url.empty()) {
-        conn = mysql_real_connect(connection, nullptr, username.c_str(), password.c_str(),
-                                  dbName.c_str(), 0, nullptr, 0);
-    } else {
-        conn = mysql_real_connect(connection, url.c_str(), username.c_str(), password.c_str(),
-                                  dbName.c_str(), 0, nullptr, 0);
-    }
-
-    if (conn == nullptr) {
-        std::string error = "Failed to connect to MySQL database: " + std::string(mysql_error(connection));
-        mysql_close(connection);
-        std::cout << error << std::endl;
-    }
-
-    return {connection, dbName};
-}
-
-// 改成类的智能指针
-void disconnectFromDatabase(DatabaseConnection& db) {
-    mysql_close(db.connection);
-}
-
 
 int main(int argc, char* argv[]) {
 
@@ -178,6 +112,22 @@ int main(int argc, char* argv[]) {
     int port = std::atoi(readConfig("config.conf", "port").c_str());
     InitFtpConn(server, port);
 
+    // string host = readConfig("config.conf", "db_url");
+    // string user = readConfig("config.conf", "db_user");
+    // string pwd = readConfig("config.conf", "db_pwd");
+    // string db = readConfig("config.conf", "db_database");
+
+    // sql::Connection* conn = nullptr;
+
+    // if(ConnectMySQL(host, user, pwd, db, conn)) {
+    //     std::cout << "Database connection successfully" << std::endl;
+
+    //     if(CloseMySQL(conn)) {
+    //         std::cout << "Database close successfully" << std::endl;
+    //     }
+    // } else {
+    //     std::cout << "Fail to connect to database" << std::endl;
+    // }
 
     // ThreadPool& pool = ThreadPool::GetInstance(4);
     // // DataBase& db1 = DataBase::GetInstance("name1", "pwd1");
@@ -221,3 +171,27 @@ int main(int argc, char* argv[]) {
 }
 
 
+int sum1(int a, int b)
+{
+   // std::cout << "Executing sum1 on thread:" << std::this_thread::get_id() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+	return a + b;
+}
+
+int sum2(int a, int b, int c)
+{
+  //  std::cout << "Executing sum2 on thread:" << std::this_thread::get_id() << std::endl;
+	std::this_thread::sleep_for(std::chrono::seconds(1));
+    return a + b + c;
+}
+
+std::string funA(std::string str) {
+    std::cout << "Executing funA on thread:" << std::this_thread::get_id() << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+    return "hello" + str;
+}
+
+void funC(int i) {
+    std::cout << "Executing funC thread:" << std::this_thread::get_id() << "Executing func" << std::endl;
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+}
