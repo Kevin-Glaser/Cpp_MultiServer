@@ -9,7 +9,7 @@ SRC = main.cc ./include/DBUtil/DatabaseUtil.cc ./include/LogUtil/LogUtil.cc ./in
 LIBS = -L./lib -lpthread -lmysqlcppconn
 
 # xxx.o
-OBJS = main.o DatabaseUtil.o LogUtil.o FtpUtil.o
+OBJS = main.o DatabaseUtil.o LogUtil.o FtpUtil.o DatabasePoolUtil.o
 
 all: $(TARGET)
 
@@ -22,6 +22,9 @@ main.o: main.cc
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 DatabaseUtil.o: ./include/DBUtil/DatabaseUtil.cc
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+DatabasePoolUtil.o: ./include/DBUtil/DatabasePoolUtil.cc
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 LogUtil.o: ./include/LogUtil/LogUtil.cc

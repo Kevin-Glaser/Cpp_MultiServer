@@ -112,22 +112,26 @@ int main(int argc, char* argv[]) {
     int port = std::atoi(readConfig("config.conf", "port").c_str());
     InitFtpConn(server, port);
 
-    // string host = readConfig("config.conf", "db_url");
-    // string user = readConfig("config.conf", "db_user");
-    // string pwd = readConfig("config.conf", "db_pwd");
-    // string db = readConfig("config.conf", "db_database");
+    std::string url = readConfig("config.conf", "db_url");
+    std::string user = readConfig("config.conf", "db_user");
+    std::string pwd = readConfig("config.conf", "db_pwd");
+    std::string db = readConfig("config.conf", "db_database");
+    DataBasePool& pool = DataBasePool::GetInstance(4);
 
-    // sql::Connection* conn = nullptr;
+    pool.CreateNewConn(url, user, pwd, db);
 
-    // if(ConnectMySQL(host, user, pwd, db, conn)) {
-    //     std::cout << "Database connection successfully" << std::endl;
+    std::shared_ptr<sql::Connection> conn1 = pool.GetConnection(url, user, pwd, db);
+    if (conn1) {
+        std::cout << "Got a connection from the pool for " << url << std::endl;
 
-    //     if(CloseMySQL(conn)) {
-    //         std::cout << "Database close successfully" << std::endl;
-    //     }
-    // } else {
-    //     std::cout << "Fail to connect to database" << std::endl;
-    // }
+
+        pool.ReleaseConnection(conn1);
+    } else {
+        std::cout << "Failed to get a connection from the pool for " << url << std::endl;
+    }
+    // 销毁连接
+    pool.DestroyConn();
+
 
     // ThreadPool& pool = ThreadPool::GetInstance(4);
     // // DataBase& db1 = DataBase::GetInstance("name1", "pwd1");

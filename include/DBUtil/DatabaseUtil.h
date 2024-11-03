@@ -12,38 +12,40 @@ class Database
 {
 private:
     std::shared_ptr<sql::Connection> p_conn;
-    std::shared_ptr<sql::Driver> p_driver;
-};
 
-bool ConnectMySQL(const std::string& host, const std::string& user, const std::string& password, const std::string& database, sql::Connection* conn) {
-    try {
-        sql::Driver* driver = get_driver_instance();
-        conn = driver->connect(host, user, password);
-
-        conn->setSchema(database);
-
-        std::cout << "Connected to database successfully" << std::endl;
-
-        delete conn;
-        return true;
+public:
+    Database() {
+        std::cout << "Database()" << std::endl;
     }
-    catch(sql::SQLException& e) {
-        std::cout << "SQL Exception:" << e.what() << std::endl;
-        std::cout << "MySQL Error Code: " << e.getErrorCode() << std::endl;
-        std::cout << "SQL State: " << e.getSQLState() << std::endl;
-        return false;
-    }
-    return true;
-}
 
-bool CloseMySQL(sql::Connection* conn) {
-    if(conn) {
+    bool ConnectMySQL(const std::string& host, const std::string& user, const std::string& password, const std::string& database) {
         try {
-            conn->close();
-            delete conn;
-            std::cout << "Database connetion closed suuccessfully" << std::endl;
-        } catch(sql::SQLException& e) {
-            std::cout << "Error close database connection:" << e.what() << std::endl;
+            sql::Driver* driver = get_driver_instance();
+            p_conn.reset(driver->connect(host, user, password));
+            p_conn->setSchema(database);
+            std::cout << "Connected to database successfully" << std::endl;
+            return true;
+        } catch (sql::SQLException& e) {
+            std::cout << "SQL Exception: " << e.what() << std::endl;
+            std::cout << "MySQL Error Code: " << e.getErrorCode() << std::endl;
+            std::cout << "SQL State: " << e.getSQLState() << std::endl;
+            return false;
         }
     }
-}
+
+    std::shared_ptr<sql::Connection> GetConnection() const {
+        return p_conn;
+    }
+
+    bool CloseConnection() {
+        if(p_conn) {
+            p_conn->close();
+            p_conn.reset();
+            return true;
+        }
+        return false;
+    }
+    virtual ~Database() {
+        std::cout << "~Database()" << std::endl;
+    }
+};
