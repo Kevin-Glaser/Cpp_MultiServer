@@ -2,6 +2,9 @@
 #include "LogUtil/LogUtil.h"
 #include "ThreadPool/ThreadPool.h"
 #include "FtpUtil/ftplib.h"
+
+#include <chrono>
+#include <iomanip>
 #include <sstream>
 
 
@@ -105,6 +108,17 @@ void createConfig(const std::string& filename, const std::vector<std::pair<std::
     file.close();
 }
 
+// 生成包含当前日期的文件名
+std::string getCurrentDateTimeFilename() {
+    auto now = std::chrono::system_clock::now();
+    std::time_t now_c = std::chrono::system_clock::to_time_t(now);
+    std::tm now_tm;
+    localtime_r(&now_c, &now_tm);
+
+    std::ostringstream oss;
+    oss << std::put_time(&now_tm, "%Y_%m_%d") << ".log";
+    return oss.str();
+}
 
 int main(int argc, char* argv[]) {
 
@@ -123,8 +137,6 @@ int main(int argc, char* argv[]) {
     std::shared_ptr<sql::Connection> conn1 = pool.GetConnection(url, user, pwd, db);
     if (conn1) {
         std::cout << "Got a connection from the pool for " << url << std::endl;
-
-
         pool.ReleaseConnection(conn1);
     } else {
         std::cout << "Failed to get a connection from the pool for " << url << std::endl;
@@ -133,14 +145,15 @@ int main(int argc, char* argv[]) {
     pool.DestroyConn();
 
 
-    // ThreadPool& pool = ThreadPool::GetInstance(4);
-    // // DataBase& db1 = DataBase::GetInstance("name1", "pwd1");
-    // // Logger& logger = Logger::GetInstance();
+    ThreadPool& thread_pool = ThreadPool::GetInstance(4);
+    Logger& logger = Logger::GetInstance();
 
-    // // auto terminalLogHandler = std::make_unique<TerminalLogHandler>();
-    // // auto fileLogHandler = std::make_unique<FileLogHandler>("test.log");
-    // // logger.AddHandler(std::move(terminalLogHandler));
-    // // logger.AddHandler(std::move(fileLogHandler));
+    auto terminalLogHandler = std::make_unique<TerminalLogHandler>();
+
+    std::string logFileName = getCurrentDateTimeFilename();
+    auto fileLogHandler = std::make_unique<FileLogHandler>(logFileName);
+    logger.AddHandler(std::move(terminalLogHandler));
+    logger.AddHandler(std::move(fileLogHandler));
 
 
     // // 添加测试int返回值的任务
@@ -159,14 +172,14 @@ int main(int argc, char* argv[]) {
     // std::future<int> r7 = pool.submitTask(sum2, 10, 20, 30);
     //     pool.printStatus();
 
-    // // 添加成员函数任务,成员函数的返回值获取
-    // // auto r6 = pool.submitTask(std::bind(&Logger::WriteLog, &logger, "Goodbye", DEBUG));
+    // 添加成员函数任务,成员函数的返回值获取
+    thread_pool.submitTask(std::bind(&Logger::WriteLog, &logger, "Goodbye", DEBUG));
 	// r1.get();
 	// r2.get();
     // r3.get();
     // r4.get();
     // r5.get();
-    // r6.get();
+  //  r6.get();
     // r7.get();
 
     // pool.printStatus();
