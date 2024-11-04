@@ -55,7 +55,7 @@ public:
                     std::cerr << "Failed to get a valid connection" << std::endl;
                 }
             } 
-            catch (sql::SQLException e) {
+            catch (sql::SQLException& e) {
                 std::cout << "Exception:"<< e.what() << std::endl;
             }
             
