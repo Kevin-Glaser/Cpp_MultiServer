@@ -1,4 +1,7 @@
 # Cpp_MultiServer
+
+##### Due to some problem for the ssh connection,this repo was temporarily moved to gitlab(private), once ssh permitted,I will come back
+
 ###### 1.Learning Only
 Learning only,not for commercial use
 ###### 2.Thrid parts:
