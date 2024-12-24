@@ -122,9 +122,9 @@ std::string getCurrentDateTimeFilename() {
 
 int main(int argc, char* argv[]) {
 
-    std::string server = readConfig("config.conf", "server");
-    int port = std::atoi(readConfig("config.conf", "port").c_str());
-    InitFtpConn(server, port);
+    // std::string server = readConfig("config.conf", "server");
+    // int port = std::atoi(readConfig("config.conf", "port").c_str());
+    // InitFtpConn(server, port);
 
     std::string url = readConfig("config.conf", "db_url");
     std::string user = readConfig("config.conf", "db_user");
@@ -133,27 +133,36 @@ int main(int argc, char* argv[]) {
     DataBasePool& pool = DataBasePool::GetInstance(4);
 
     pool.CreateNewConn(url, user, pwd, db);
-
-    std::shared_ptr<sql::Connection> conn1 = pool.GetConnection(url, user, pwd, db);
-    if (conn1) {
+    
+    std::shared_ptr<sql::Connection> con = pool.GetConnection(url, user, pwd, db);
+    if (con) {
         std::cout << "Got a connection from the pool for " << url << std::endl;
-        pool.ReleaseConnection(conn1);
+        pool.SetTransaction(con, "REPEATABLE READ");
+
+        map<string, string> info = {
+            {"username", "4235231334"},
+            {"email", "321434"},
+            {"password", "pas12352523"}
+        };
+        pool.InsertData(con, "users", info);
+        pool.ReleaseConnection(con);
     } else {
         std::cout << "Failed to get a connection from the pool for " << url << std::endl;
     }
     // 销毁连接
-    pool.DestroyConn();
+    
+     pool.DestroyConn();
 
 
-    ThreadPool& thread_pool = ThreadPool::GetInstance(4);
-    Logger& logger = Logger::GetInstance();
+    // ThreadPool& thread_pool = ThreadPool::GetInstance(4);
+    // Logger& logger = Logger::GetInstance();
 
-    auto terminalLogHandler = std::make_unique<TerminalLogHandler>();
+    // auto terminalLogHandler = std::make_unique<TerminalLogHandler>();
 
-    std::string logFileName = getCurrentDateTimeFilename();
-    auto fileLogHandler = std::make_unique<FileLogHandler>(logFileName);
-    logger.AddHandler(std::move(terminalLogHandler));
-    logger.AddHandler(std::move(fileLogHandler));
+    // std::string logFileName = getCurrentDateTimeFilename();
+    // auto fileLogHandler = std::make_unique<FileLogHandler>(logFileName);
+    // logger.AddHandler(std::move(terminalLogHandler));
+    // logger.AddHandler(std::move(fileLogHandler));
 
 
     // // 添加测试int返回值的任务
@@ -173,7 +182,7 @@ int main(int argc, char* argv[]) {
     //     pool.printStatus();
 
     // 添加成员函数任务,成员函数的返回值获取
-    thread_pool.submitTask(std::bind(&Logger::WriteLog, &logger, "Goodbye", DEBUG));
+    //thread_pool.submitTask(std::bind(&Logger::WriteLog, &logger, "Goodbye", DEBUG));
 	// r1.get();
 	// r2.get();
     // r3.get();
