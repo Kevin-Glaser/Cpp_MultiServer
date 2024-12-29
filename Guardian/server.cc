@@ -15,7 +15,7 @@
 #include <sstream>
 #include <stdexcept>
 
-const char* SHM_NAME = "/shared_memory_example";
+const char* SHM_NAME = "test_shm";
 const size_t SHM_SIZE = 4096;
 
 class Server {
@@ -129,14 +129,10 @@ private:
     }
 
     void sendStartupMessage(unsigned short port) {
-        std::string message = "Server connected successfully on port ";
-        std::ostringstream oss;
-        oss << message << port;
-
-        sendMessageToGuardian(oss.str());
+        std::string message = "Server connected successfully on port [" + std::to_string(port) + "]";
 
         // 发送消息到守护进程或客户端
-        const char* msg_to_send = "Hello from server!";
+        const char* msg_to_send = message.c_str();
         if (send(server_socket, msg_to_send, strlen(msg_to_send), 0) < 0) {
             throw std::runtime_error("Failed to send message: " + std::string(strerror(errno)));
         }
@@ -158,14 +154,14 @@ public:
             std::string port_str = buffer.read();
             unsigned short port = static_cast<unsigned short>(atoi(port_str.c_str()));
             if (port == 0 && port_str.empty()) {
-                throw std::runtime_error("Invalid or empty port number in shared memory");
+                throw std::runtime_error("Invalid or empty port number in shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
             }
 
             std::cout << "Read port number from shared memory: " << port << std::endl;
 
             // 尝试建立连接
             if (!connectToPort(port)) {
-                throw std::runtime_error("Failed to connect to the specified port");
+                throw std::runtime_error("Failed to connect to the specified port in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
             }
 
             // 发送启动消息

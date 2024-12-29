@@ -48,7 +48,7 @@ static void writeLog(const std::string& message) {
     }
 }
 
-const char* SHM_NAME = "shared_memory_example";
+const char* SHM_NAME = "test_shm";
 const size_t SHM_SIZE = 4096;
 const char* SERVER_PATH = "/home/demo/Documents/Cpp_MultiServer/Guardian/server";
 
@@ -143,7 +143,7 @@ private:
 
         _listening_fd = socket(AF_INET, SOCK_STREAM, 0);
         if (_listening_fd == -1) {
-            throw std::runtime_error("socket() failed");
+            throw std::runtime_error("socket() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
 
         // 设置地址复用
@@ -157,20 +157,20 @@ private:
         ret = bind(_listening_fd, (struct sockaddr*)&addrServ, sizeof(struct sockaddr_in));
         if (ret) {
             close(_listening_fd);
-            throw std::runtime_error("bind() failed");
+            throw std::runtime_error("bind() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
 
         ret = listen(_listening_fd, 10);
         if (ret) {
             close(_listening_fd);
-            throw std::runtime_error("listen() failed");
+            throw std::runtime_error("listen() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
 
         // 将端口号写入共享内存
         unsigned short localPort = getLocalPort(_listening_fd);
         SharedMemoryManager shm_manager(SHM_NAME, SHM_SIZE);
         if (!shm_manager.createSharedMemory()) {
-            throw std::runtime_error("Failed to create shared memory");
+            throw std::runtime_error("Failed to create shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
         shm_manager.writePort(localPort);
 
@@ -189,7 +189,7 @@ private:
     void setupEpoll() {
         _epoll_fd = epoll_create1(0);
         if (_epoll_fd == -1) {
-            throw std::runtime_error("epoll_create1() failed");
+            throw std::runtime_error("epoll_create1() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
 
         struct epoll_event event;
@@ -198,7 +198,7 @@ private:
 
         if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, _listening_fd, &event) == -1) {
             close(_epoll_fd);
-            throw std::runtime_error("epoll_ctl() failed");
+            throw std::runtime_error("epoll_ctl() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
     }
 
@@ -210,7 +210,7 @@ private:
             int nfds = epoll_wait(_epoll_fd, events, MAX_EVENTS, -1);
             if (nfds == -1) {
                 if (errno != EINTR) { // 如果不是被信号中断，则抛出异常
-                    throw std::runtime_error("epoll_wait() failed");
+                    throw std::runtime_error("epoll_wait() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
                 }
                 continue;
             }
@@ -223,7 +223,7 @@ private:
                     int connfd = accept(_listening_fd, (struct sockaddr*)&clientAddr, &addrlen);
                     if (connfd == -1) {
                         if (errno != EAGAIN && errno != EWOULDBLOCK) { // 非阻塞错误
-                            throw std::runtime_error("accept() failed");
+                            throw std::runtime_error("accept() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
                         }
                         break;
                     }
@@ -239,7 +239,7 @@ private:
 
                     if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, connfd, &event) == -1) {
                         close(connfd);
-                        throw std::runtime_error("epoll_ctl() failed");
+                        throw std::runtime_error("epoll_ctl() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
                     }
 
                     writeLog("New connection established.");
@@ -263,11 +263,10 @@ private:
                     } else {
                         buffer[numBytes] = '\0';
                         // 处理收到的数据
-                        writeLog("Received data from client: " + std::string(buffer));
+                        writeLog("Received data from server: " + std::string(buffer));
                         // 回应客户端（这里仅作为示例）
-                        std::cout << buffer << std::endl;
-                        write(fd, "Echo: ", 6);
-                        write(fd, buffer, numBytes);
+                        // write(fd, "Echo: ", 6);
+                        // write(fd, buffer, numBytes);
                     }
                 }
             }
@@ -278,7 +277,7 @@ private:
         pid_t pid = fork();
         if (pid == -1) {
             writeLog("Failed to fork process: " + std::string(strerror(errno)));
-            throw std::runtime_error("fork() failed");
+            throw std::runtime_error("fork() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         } else if (pid == 0) {
             // 子进程
             // 调用server程序
