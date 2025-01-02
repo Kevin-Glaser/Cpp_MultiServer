@@ -115,7 +115,6 @@ private:
         sockaddr_in server_addr;
         server_addr.sin_family = AF_INET;
         server_addr.sin_port = htons(port);
-    //    server_addr.sin_addr.s_addr = INADDR_LOOPBACK; // 连接到本地回环地址,这样就连不上
 
         inet_pton(AF_INET, "127.0.0.1", &server_addr.sin_addr);
 
@@ -124,7 +123,6 @@ private:
             close(server_socket);
             return false;
         }
-        std::cout << "Server connected successfully" << std::endl;
         return true;
     }
 

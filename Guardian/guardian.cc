@@ -91,7 +91,6 @@ public:
         writeLog(std::string("set_listening_port_to_shm:[") + shm_name + "][" + std::to_string(port) + "] success");
     }
 
-private:
     void cleanupSharedMemory() {
         if (shared_data) {
             munmap(shared_data, shm_size);
@@ -102,8 +101,10 @@ private:
             shm_unlink(shm_name); // 删除共享内存对象
             shm_fd = -1;
         }
+        writeLog("CleanupSharedMemory success");
     }
 
+private:
     const char* shm_name;
     size_t shm_size;
     int shm_fd;
@@ -114,7 +115,7 @@ private:
 class SocketManager {
 public:
     SocketManager()
-        : _listening_fd(-1), _epoll_fd(-1) {}
+        : _listening_fd(-1), _epoll_fd(-1), shm_manager(SHM_NAME, SHM_SIZE) {}
 
     ~SocketManager() {
         if (_listening_fd != -1) {
@@ -168,7 +169,6 @@ private:
 
         // 将端口号写入共享内存
         unsigned short localPort = getLocalPort(_listening_fd);
-        SharedMemoryManager shm_manager(SHM_NAME, SHM_SIZE);
         if (!shm_manager.createSharedMemory()) {
             throw std::runtime_error("Failed to create shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
@@ -262,6 +262,11 @@ private:
                         }
                     } else {
                         buffer[numBytes] = '\0';
+                        if(std::string(buffer).find("connected successfully") != std::string::npos) {
+                            writeLog("Receivec data from server:" + std::string(buffer));
+                            writeLog("Shared memory will be closed to save memory");
+                            shm_manager.cleanupSharedMemory();
+                        }
                         // 处理收到的数据
                         writeLog("Received data from server: " + std::string(buffer));
                         // 回应客户端（这里仅作为示例）
@@ -286,6 +291,7 @@ private:
             writeLog("Failed to execute server: " + std::string(strerror(errno)));
             exit(1);
         } else {
+            child_pid = pid;
             // 父进程
             writeLog("Parent process continues.");
         }
@@ -293,6 +299,8 @@ private:
 
     int _listening_fd;
     int _epoll_fd;
+    SharedMemoryManager shm_manager;
+    pid_t child_pid;
 };
 
 int main() {
