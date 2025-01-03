@@ -20,8 +20,8 @@
 #include <sys/wait.h>
 #include <sys/types.h>
 #include <mutex>
+#include <signal.h>
 
-// 写日志
 static std::mutex log_mutex;
 
 static void writeLog(const std::string& message) {
@@ -52,15 +52,13 @@ const char* SHM_NAME = "test_shm";
 const size_t SHM_SIZE = 4096;
 const char* SERVER_PATH = "/home/demo/Documents/Cpp_MultiServer/Guardian/server";
 
-// SharedMemoryManager 类
 class SharedMemoryManager {
 public:
     SharedMemoryManager(const char* name, size_t size)
         : shm_name(name), shm_size(size), shm_fd(-1), shared_data(nullptr) {}
 
     ~SharedMemoryManager() {
-        // 这里析构函数不能关闭共享内存，否则server就访问不到这块内存里的数据
-       // cleanupSharedMemory();
+        cleanupSharedMemory();
     }
 
     bool createSharedMemory() {
@@ -111,18 +109,31 @@ private:
     char* shared_data;
 };
 
-// SocketManager 类
+template<typename T>
+class Singleton {
+public:
+    template<typename... Args>
+    static T& GetInstance(Args&&... args) {
+        static T instance(std::forward<Args>(args)...);
+        return instance;
+    }
+    Singleton(const Singleton&) = delete;
+    Singleton(Singleton&&) = delete;
+    Singleton& operator=(const Singleton&) = delete;
+    Singleton& operator=(Singleton&&) = delete;
+
+protected:
+    Singleton() { std::cout << "Singleton created" << std::endl; }
+    virtual ~Singleton() { std::cout << "Singleton destroyed" << std::endl; }
+};
+
 class SocketManager {
 public:
-    SocketManager()
-        : _listening_fd(-1), _epoll_fd(-1), shm_manager(SHM_NAME, SHM_SIZE) {}
-
-    ~SocketManager() {
-        if (_listening_fd != -1) {
-            close(_listening_fd);
-        }
-        if (_epoll_fd != -1) {
-            close(_epoll_fd);
+    void stopChildProcess() {
+        if (child_pid > 0) {
+            kill(child_pid, SIGTERM);
+            waitpid(child_pid, nullptr, 0);
+            writeLog("Child process stopped.");
         }
     }
 
@@ -138,6 +149,20 @@ public:
     }
 
 private:
+    friend class Singleton<SocketManager>;
+    SocketManager() // 将构造函数设为私有
+        : _listening_fd(-1), _epoll_fd(-1), shm_manager(std::make_unique<SharedMemoryManager>(SHM_NAME, SHM_SIZE)) {}
+
+    ~SocketManager() {
+        if (_listening_fd != -1) {
+            close(_listening_fd);
+        }
+        if (_epoll_fd != -1) {
+            close(_epoll_fd);
+        }
+        stopChildProcess();
+    }
+
     void setupListeningSocket() {
         struct sockaddr_in addrServ;
         socklen_t ret;
@@ -169,10 +194,10 @@ private:
 
         // 将端口号写入共享内存
         unsigned short localPort = getLocalPort(_listening_fd);
-        if (!shm_manager.createSharedMemory()) {
+        if (!shm_manager->createSharedMemory()) {
             throw std::runtime_error("Failed to create shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
         }
-        shm_manager.writePort(localPort);
+        shm_manager->writePort(localPort);
 
         // 设置为非阻塞模式
         int flags = fcntl(_listening_fd, F_GETFL, 0);
@@ -265,7 +290,7 @@ private:
                         if(std::string(buffer).find("connected successfully") != std::string::npos) {
                             writeLog("Receivec data from server:" + std::string(buffer));
                             writeLog("Shared memory will be closed to save memory");
-                            shm_manager.cleanupSharedMemory();
+                            shm_manager->cleanupSharedMemory();
                         }
                         // 处理收到的数据
                         writeLog("Received data from server: " + std::string(buffer));
@@ -299,15 +324,23 @@ private:
 
     int _listening_fd;
     int _epoll_fd;
-    SharedMemoryManager shm_manager;
+    std::unique_ptr<SharedMemoryManager> shm_manager;
     pid_t child_pid;
 };
+
+void signalHandler(int signum) {
+    //Singleton<SocketManager>::GetInstance().stopChildProcess();
+    exit(signum);
+}
 
 int main() {
     try {
         // 启动 SocketManager 并进入事件循环
-        SocketManager socket_manager;
-        socket_manager.start();
+        SocketManager& manager = Singleton<SocketManager>::GetInstance();
+        signal(SIGINT, signalHandler);
+        signal(SIGTERM, signalHandler);
+
+        manager.start();
     } catch (const std::exception& e) {
         writeLog("Main error: " + std::string(e.what()));
     }
