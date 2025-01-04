@@ -132,13 +132,7 @@ public:
         }
     }
 
-    static void signalHandler(int signum) {
-    //    Singleton<SocketManager>::GetInstance().stopChildProcess();
-        exit(signum);
-    }
-
 private:
-    friend class Singleton<SocketManager>;
 
     SocketManager() // 将构造函数设为私有
         : _listening_fd(-1), _epoll_fd(-1), shm_manager(std::make_unique<SharedMemoryManager>(SHM_NAME, SHM_SIZE)) {
@@ -155,6 +149,11 @@ private:
             close(_epoll_fd);
         }
         stopChildProcess();
+    }
+
+    static void signalHandler(int signum) {
+    //    Singleton<SocketManager>::GetInstance().stopChildProcess();
+        exit(signum);
     }
 
     void setupListeningSocket() {
@@ -316,6 +315,7 @@ private:
         }
     }
 
+    friend class Singleton<SocketManager>;
     int _listening_fd;
     int _epoll_fd;
     std::unique_ptr<SharedMemoryManager> shm_manager;
