@@ -22,6 +22,8 @@
 #include <mutex>
 #include <signal.h>
 
+#include "Singleton.h"
+
 static std::mutex log_mutex;
 
 static void writeLog(const std::string& message) {
@@ -109,24 +111,6 @@ private:
     char* shared_data;
 };
 
-template<typename T>
-class Singleton {
-public:
-    template<typename... Args>
-    static T& GetInstance(Args&&... args) {
-        static T instance(std::forward<Args>(args)...);
-        return instance;
-    }
-    Singleton(const Singleton&) = delete;
-    Singleton(Singleton&&) = delete;
-    Singleton& operator=(const Singleton&) = delete;
-    Singleton& operator=(Singleton&&) = delete;
-
-protected:
-    Singleton() { std::cout << "Singleton created" << std::endl; }
-    virtual ~Singleton() { std::cout << "Singleton destroyed" << std::endl; }
-};
-
 class SocketManager {
 public:
     void stopChildProcess() {
@@ -148,10 +132,20 @@ public:
         }
     }
 
+    static void signalHandler(int signum) {
+    //    Singleton<SocketManager>::GetInstance().stopChildProcess();
+        exit(signum);
+    }
+
 private:
     friend class Singleton<SocketManager>;
+
     SocketManager() // 将构造函数设为私有
-        : _listening_fd(-1), _epoll_fd(-1), shm_manager(std::make_unique<SharedMemoryManager>(SHM_NAME, SHM_SIZE)) {}
+        : _listening_fd(-1), _epoll_fd(-1), shm_manager(std::make_unique<SharedMemoryManager>(SHM_NAME, SHM_SIZE)) {
+        // 设置信号处理函数
+        signal(SIGINT, SocketManager::signalHandler);
+        signal(SIGTERM, SocketManager::signalHandler);
+    }
 
     ~SocketManager() {
         if (_listening_fd != -1) {
@@ -328,18 +322,10 @@ private:
     pid_t child_pid;
 };
 
-void signalHandler(int signum) {
-    //Singleton<SocketManager>::GetInstance().stopChildProcess();
-    exit(signum);
-}
-
 int main() {
     try {
         // 启动 SocketManager 并进入事件循环
         SocketManager& manager = Singleton<SocketManager>::GetInstance();
-        signal(SIGINT, signalHandler);
-        signal(SIGTERM, signalHandler);
-
         manager.start();
     } catch (const std::exception& e) {
         writeLog("Main error: " + std::string(e.what()));
