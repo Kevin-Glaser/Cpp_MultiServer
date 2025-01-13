@@ -15,6 +15,10 @@
 #include <sstream>
 #include <stdexcept>
 
+#include "include/JsonUtil/json.hpp"
+
+using json = nlohmann::json;
+
 const char* SHM_NAME = "test_shm";
 const size_t SHM_SIZE = 4096;
 
@@ -83,6 +87,7 @@ private:
 
     Buffer buffer;
     int server_socket;
+   // int client_socket;
 
     void sendMessageToGuardian(const std::string& message) {
         buffer.write(message);
@@ -126,18 +131,61 @@ private:
         return true;
     }
 
-    void sendStartupMessage(unsigned short port) {
-        std::string message = "Server connected successfully on port [" + std::to_string(port) + "]";
+    void sendMessage(const char* action, unsigned short port) {
+        std::string message = "connected on port " + std::to_string(port);
 
+        json j = {
+            {"action", action},
+            {"msg", message.c_str()}
+        };
+        std::string msg = j.dump();
         // 发送消息到守护进程或客户端
-        const char* msg_to_send = message.c_str();
+        const char* msg_to_send = msg.c_str();
         if (send(server_socket, msg_to_send, strlen(msg_to_send), 0) < 0) {
             throw std::runtime_error("Failed to send message: " + std::string(strerror(errno)));
         }
     }
 
+    void receiveMessages() {
+        char buffer[1024];
+        while (true) {
+            ssize_t numBytes = recv(server_socket, buffer, sizeof(buffer) - 1, 0);
+            if (numBytes <= 0) {
+                if (numBytes == 0 || (numBytes == -1 && (errno == ECONNRESET))) {
+                    // 连接关闭或重置
+                    close(server_socket);
+                    std::cout << "Connection closed." << std::endl;
+                    break;
+                } else {
+                    // 其他读取错误
+                    close(server_socket);
+                    std::cerr << "recv() failed: " << strerror(errno) << std::endl;
+                    break;
+                }
+            } else {
+                buffer[numBytes] = '\0';
+                std::cout << "Received message: " << buffer << std::endl;
+                // 处理收到的消息
+
+                // 发送 "ok" 消息作为回复
+                auto j = json::parse(buffer);
+                if (j["action"] == "ping") {
+                    // 创建 JSON 消息
+                    json response = {
+                        {"action", "pong"},
+                        {"msg", "ok"}
+                    };
+                    std::string response_msg = response.dump();
+                    if (send(server_socket, response_msg.c_str(), response_msg.size(), 0) < 0) {
+                        throw std::runtime_error("Failed to send 'ok' message: " + std::string(strerror(errno)));
+                    }
+                }
+            }
+        }
+    }
+
 public:
-    Server() : buffer(SHM_NAME, SHM_SIZE) {}
+    Server() : buffer(SHM_NAME, SHM_SIZE), server_socket(-1) {}
 
     void start() {
         try {
@@ -148,11 +196,14 @@ public:
             std::cout << "Initializing resources..." << std::endl;
             std::this_thread::sleep_for(std::chrono::seconds(2)); // 模拟初始化过程
 
-            // 从共享内存中读取端口号
-            std::string port_str = buffer.read();
-            unsigned short port = static_cast<unsigned short>(atoi(port_str.c_str()));
-            if (port == 0 && port_str.empty()) {
-                throw std::runtime_error("Invalid or empty port number in shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
+            // 从共享内存中读取信息
+            std::string info_str = buffer.read();
+            json server_info = json::parse(info_str);
+
+            // 解析 JSON 获取端口号
+            unsigned short port = server_info["msg"]["port"].get<unsigned short>();
+            if (port == 0) {
+                throw std::runtime_error("Invalid port number in shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
             }
 
             std::cout << "Read port number from shared memory: " << port << std::endl;
@@ -163,8 +214,12 @@ public:
             }
 
             // 发送启动消息
-            sendStartupMessage(port);
+            sendMessage("startup", port);
             std::cout << "Server started successfully" << std::endl;
+
+            // 启动一个线程来接收消息
+            std::thread receiveThread(&Server::receiveMessages, this);
+            receiveThread.detach();
 
             // 模拟正常运行
             while (true) {

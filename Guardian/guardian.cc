@@ -1,5 +1,4 @@
 #include "SocketManagerUtil/SocketManager.h"
-
 int main() {
     try {
         const char* shm_name = "test_shm";
