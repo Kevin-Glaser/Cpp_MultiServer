@@ -75,7 +75,7 @@ public:
     }
 
     bool createSharedMemory();
-    void writePort(unsigned short port);
+    void writePort(unsigned short longPort, unsigned short shortPort);
     void cleanupSharedMemory();
 
 private:
@@ -108,8 +108,11 @@ public:
     SocketManagerImpl(const char* shm_name, const size_t shm_size, const char* server_path);
 
     ~SocketManagerImpl() {
-        if (_listening_fd != -1) {
-            close(_listening_fd);
+        if (long_listening_fd != -1) {
+            close(long_listening_fd);
+        }
+        if(short_listening_fd != -1) {
+            close(short_listening_fd);
         }
         if (_epoll_fd != -1) {
             close(_epoll_fd);
@@ -121,6 +124,7 @@ public:
     static void signalHandler(int signum) { exit(signum); }
 
     void setupListeningSocket();
+    void setupListeningSocketHelper(int& fd);
     unsigned short getLocalPort(int sockfd);
     void setupEpoll();
     void handleEvents();
@@ -131,13 +135,15 @@ public:
     std::string actionToString(Action action);
     void sendMessage(Action action, const std::string& msg);
     void startHeartbeat();
+    void handleShortConnection(int fd);
 
-    int _listening_fd;
+    int long_listening_fd;
+    int short_listening_fd;
     int _epoll_fd;
     std::unique_ptr<SharedMemoryManager> shm_manager;
     pid_t child_pid;
     const char* server_path;
-    std::unordered_set<int> client_fds; // 添加存储已连接客户端套接字的容器
+    int server_fds; // 保持为单个文件描述符
 };
 
 #endif

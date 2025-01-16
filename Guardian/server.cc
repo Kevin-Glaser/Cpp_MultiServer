@@ -201,7 +201,7 @@ public:
             json server_info = json::parse(info_str);
 
             // 解析 JSON 获取端口号
-            unsigned short port = server_info["msg"]["port"].get<unsigned short>();
+            unsigned short port = server_info["msg"]["long_port"].get<unsigned short>();
             if (port == 0) {
                 throw std::runtime_error("Invalid port number in shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
             }
