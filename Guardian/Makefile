@@ -7,7 +7,7 @@ SRC = guardian.cc ./include/SocketManagerUtil/SocketManager.cc
 
 LIBS = -lpthread -lrt
 
-OBJS = guardian.o SocketManager.o
+OBJS = guardian.o SocketManager.o SharedMemoryUtil.o
 OBJ_DIR = build
 
 $(shell mkdir -p $(OBJ_DIR))
@@ -19,6 +19,9 @@ $(TARGET): $(OBJS)
 	mv $(OBJS) $(OBJ_DIR)
 
 SocketManager.o: ./include/SocketManagerUtil/SocketManager.cc
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+SharedMemoryUtil.o: ./include/SharedMemoryUtil/SharedMemoryUtil.cc
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 guardian.o: guardian.cc

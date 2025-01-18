@@ -87,7 +87,7 @@ private:
 
     Buffer buffer;
     int server_socket;
-   // int client_socket;
+    unsigned short port; // 添加端口号变量
 
     void sendMessageToGuardian(const std::string& message) {
         buffer.write(message);
@@ -131,6 +131,17 @@ private:
         return true;
     }
 
+    bool reconnectToPort(unsigned short port) {
+        while (true) {
+            std::cout << "Attempting to reconnect..." << std::endl;
+            if (connectToPort(port)) {
+                std::cout << "Reconnected successfully." << std::endl;
+                return true;
+            }
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+
     void sendMessage(const char* action, unsigned short port) {
         std::string message = "connected on port " + std::to_string(port);
 
@@ -154,8 +165,9 @@ private:
                 if (numBytes == 0 || (numBytes == -1 && (errno == ECONNRESET))) {
                     // 连接关闭或重置
                     close(server_socket);
-                    std::cout << "Connection closed." << std::endl;
-                    break;
+                    std::cout << "Connection closed. Attempting to reconnect..." << std::endl;
+                    reconnectToPort(port); // 使用端口号变量进行重连
+                    continue;
                 } else {
                     // 其他读取错误
                     close(server_socket);
@@ -185,7 +197,7 @@ private:
     }
 
 public:
-    Server() : buffer(SHM_NAME, SHM_SIZE), server_socket(-1) {}
+    Server() : buffer(SHM_NAME, SHM_SIZE), server_socket(-1), port(0) {} // 初始化端口号变量
 
     void start() {
         try {
@@ -201,7 +213,7 @@ public:
             json server_info = json::parse(info_str);
 
             // 解析 JSON 获取端口号
-            unsigned short port = server_info["msg"]["long_port"].get<unsigned short>();
+            port = server_info["msg"]["port"].get<unsigned short>();
             if (port == 0) {
                 throw std::runtime_error("Invalid port number in shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
             }

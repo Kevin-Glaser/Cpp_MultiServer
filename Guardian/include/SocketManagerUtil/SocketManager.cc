@@ -1,58 +1,5 @@
 #include "SocketManager.h"
 
-bool SharedMemoryManager::createSharedMemory()  {
-    shm_fd = shm_open(shm_name, O_CREAT | O_RDWR, 0666);
-    if (shm_fd == -1) {
-        writeLog("Failed to create shared memory: " + std::string(strerror(errno)));
-        return false;
-    }
-
-    if (ftruncate(shm_fd, shm_size) == -1) {
-        writeLog("Failed to set shared memory size: " + std::string(strerror(errno)));
-        close(shm_fd);
-        return false;
-    }
-
-    shared_data = (char*) mmap(0, shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
-    if (shared_data == MAP_FAILED) {
-        writeLog("Failed to map shared memory: " + std::string(strerror(errno)));
-        close(shm_fd);
-        return false;
-    }
-
-    return true;
-}
-
-void SharedMemoryManager::writePort(unsigned short longPort, unsigned short shortPort) {
-    json server_info = {
-        {"action", "start_server"},
-        {"msg", 
-            {
-                {"server_id", "server-01"},
-                {"version", "1.0.0"},
-                {"long_port", longPort},
-                {"short_port", shortPort},
-            }
-        }
-    };
-
-    std::string json_str = server_info.dump();
-    sprintf(shared_data, "%s", json_str.c_str());
-    writeLog(std::string("set_listening_port_to_shm:[") + shm_name + "][" + json_str + "] success");
-}
-
-void SharedMemoryManager::cleanupSharedMemory() {
-    if (shm_fd != -1) {
-        close(shm_fd);
-        shm_fd = -1;
-    }
-    if (shared_data != nullptr) {
-        munmap(shared_data, shm_size);
-        shared_data = nullptr;
-    }
-}
-
-
 
 void SocketManager::start() {
     try {
@@ -67,36 +14,44 @@ void SocketManager::start() {
     }
 }
 
-SocketManager::SocketManagerImpl::SocketManagerImpl(const char* shm_name, const size_t shm_size, const char* server_path) : long_listening_fd(-1), short_listening_fd(-1), _epoll_fd(-1), shm_manager(std::make_unique<SharedMemoryManager>(shm_name, shm_size)), server_path(server_path) {
+SocketManager::SocketManagerImpl::SocketManagerImpl(const char* shm_name, const size_t shm_size, const char* server_path) : long_listening_fd(-1), _epoll_fd(-1), shm_manager(std::make_unique<SharedMemoryManager>(shm_name, shm_size)), server_path(server_path) {
         // 设置信号处理函数
         signal(SIGINT, SocketManagerImpl::signalHandler);
         signal(SIGTERM, SocketManagerImpl::signalHandler);
         std::cout << "SocketManagerImpl created." << std::endl;
     }
 
-void SocketManager::SocketManagerImpl::setupListeningSocket () {
-    setupListeningSocketHelper(long_listening_fd);
-    setupListeningSocketHelper(short_listening_fd);
+void SocketManager::SocketManagerImpl::setupListeningSocket() {
+    initSocketAddr(long_listening_fd);
 
-    // 获取长连接和短连接的端口号
+    // 获取长连接的端口号
     unsigned short longPort = getLocalPort(long_listening_fd);
-    unsigned short shortPort = getLocalPort(short_listening_fd);
 
     // 使用 writePort 函数写入端口号
     if (!shm_manager->createSharedMemory()) {
         throw std::runtime_error("Failed to create shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
     }
-    shm_manager->writePort(longPort, shortPort);
+
+    json server_info = {
+        {"action", "start_server"},
+        {"msg", 
+            {
+                {"server_id", "server-01"},
+                {"version", "1.0.0"},
+                {"port", longPort},
+            }
+        }
+    };
+
+    std::string json_str = server_info.dump();
+    shm_manager->writeData(json_str); // shortPort 设置为 0 表示无短连接
 
     // 设置为非阻塞模式
     int flags = fcntl(long_listening_fd, F_GETFL, 0);
     fcntl(long_listening_fd, F_SETFL, flags | O_NONBLOCK);
-
-    flags = fcntl(short_listening_fd, F_GETFL, 0);
-    fcntl(short_listening_fd, F_SETFL, flags | O_NONBLOCK);
 }
 
-void SocketManager::SocketManagerImpl::setupListeningSocketHelper(int& sockfd) {
+void SocketManager::SocketManagerImpl::initSocketAddr(int& sockfd) {
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd == -1) {
         throw std::runtime_error("socket() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
@@ -153,23 +108,15 @@ void SocketManager::SocketManagerImpl::setupEpoll() {
         close(_epoll_fd);
         throw std::runtime_error("epoll_ctl() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
     }
-
-    // 添加对 short_listening_fd 的监听
-    event.data.fd = short_listening_fd;
-    if (epoll_ctl(_epoll_fd, EPOLL_CTL_ADD, short_listening_fd, &event) == -1) {
-        close(_epoll_fd);
-        throw std::runtime_error("epoll_ctl() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
-    }
 }
 
-void SocketManager::SocketManagerImpl::sendMessage(Action action, const std::string& msg = "") {
-    // json j = {
-    //     {"action", actionToString(action)},
-    //     {"msg", msg}
-    // };
-    // std::string message = j.dump();
-    // sprintf(shared_data, "%s", message.c_str());
-    // writeLog(std::string("set_listening_port_to_shm:[") + shm_name + "][" + message + "] success");
+void SocketManager::SocketManagerImpl::sendMessage(const std::string& message) {
+    ssize_t sent_bytes = send(server_fds, message.c_str(), message.size(), 0);
+    if (sent_bytes == -1) {
+        writeLog("Failed to send message to client with fd: " + std::to_string(server_fds));
+    } else {
+        writeLog("Message sent to client with fd: " + std::to_string(server_fds));
+    }
 }
 
 void SocketManager::SocketManagerImpl::handleEvents() {
@@ -211,26 +158,8 @@ void SocketManager::SocketManagerImpl::handleEvents() {
                     close(connfd);
                     throw std::runtime_error("epoll_ctl() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
                 }
-
+                server_fds = connfd;
                 writeLog("New connection established.");
-            } else if (events[i].data.fd == short_listening_fd) {
-                // 处理短连接的新连接
-                struct sockaddr_in clientAddr;
-                socklen_t addrlen = sizeof(clientAddr);
-                int connfd = accept(short_listening_fd, (struct sockaddr*)&clientAddr, &addrlen);
-                if (connfd == -1) {
-                    if (errno != EAGAIN && errno != EWOULDBLOCK) { // 非阻塞错误
-                        throw std::runtime_error("accept() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
-                    }
-                    break;
-                }
-
-                // 设置新连接为非阻塞模式
-                int flags = fcntl(connfd, F_GETFL, 0);
-                fcntl(connfd, F_SETFL, flags | O_NONBLOCK);
-
-                // 处理短连接请求并关闭连接
-                handleShortConnection(connfd);
             } else {
                 // 处理客户端请求
                 int fd = events[i].data.fd;
@@ -241,7 +170,8 @@ void SocketManager::SocketManagerImpl::handleEvents() {
                         // 连接关闭或重置
                         close(fd);
                         epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-                        writeLog("Connection closed.");
+                        writeLog("Connection closed. Attempting to reconnect...");
+                        handleReconnection();
                     } else {
                         // 其他读取错误
                         close(fd);
@@ -266,13 +196,12 @@ void SocketManager::SocketManagerImpl::handleEvents() {
     }
 }
 
-// 将 Action 枚举转换为字符串
 std::string SocketManager::SocketManagerImpl::actionToString(Action action) {
     switch (action) {
         case Action::START:
-            return "start";
+            return "startup";
         case Action::STOP:
-            return "stop";
+            return "shutdown";
         case Action::HEARTBEAT:
             return "heartbeat";
         default:
@@ -291,7 +220,6 @@ void SocketManager::SocketManagerImpl::handleAction(const std::string& action, c
     }
 }
 
-// 处理启动动作
 void SocketManager::SocketManagerImpl::handleStart(const std::string& msg) {
     writeLog("Start action received: " + msg);
     if(std::string(msg).find("connected") != std::string::npos) {
@@ -301,7 +229,6 @@ void SocketManager::SocketManagerImpl::handleStart(const std::string& msg) {
     }
 }
 
-// 处理停止动作
 void SocketManager::SocketManagerImpl::handleStop(const std::string& msg) {
     writeLog("Stop action received: " + msg);
     stopChildProcess();
@@ -314,9 +241,7 @@ void SocketManager::SocketManagerImpl::startChildProcess() {
         throw std::runtime_error("fork() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
     } else if (pid == 0) {
         // 子进程
-        // 调用server程序
         execl(server_path, "server", (char*)NULL);
-        // 如果execl失败，记录错误并退出
         writeLog("Failed to execute server: " + std::string(strerror(errno)));
         exit(1);
     } else {
@@ -326,53 +251,27 @@ void SocketManager::SocketManagerImpl::startChildProcess() {
     }
 }
 
-void SocketManager::SocketManagerImpl::startHeartbeat() {
+void SocketManager::SocketManagerImpl::handleReconnection() {
     while (true) {
         // 创建 JSON 消息
+        json reconnectMsg = {
+            {"action", "reconnect"},
+            {"msg", "reconnection attempt"}
+        };
+        std::string reconnectMsgStr = reconnectMsg.dump();
+        sendMessage(reconnectMsgStr);
+        std::this_thread::sleep_for(std::chrono::seconds(5));
+    }
+}
+
+void SocketManager::SocketManagerImpl::startHeartbeat() {
+    while (true) {
         json heartbeatMsg = {
             {"action", "ping"},
             {"msg", "heartbeat message"}
         };
         std::string heartbeatMsgStr = heartbeatMsg.dump();
-
-        // 遍历所有连接的客户端套接字并发送心跳消息
-            ssize_t sent_bytes = send(server_fds, heartbeatMsgStr.c_str(), heartbeatMsgStr.size(), 0);
-        if (sent_bytes == -1) {
-            writeLog("Failed to send heartbeat to client with fd: " + std::to_string(server_fds));
-        } else {
-            writeLog("Heartbeat sent to client with fd: " + std::to_string(server_fds));
-        }
-
-        // 每隔一秒发送一次心跳消息
+        sendMessage(heartbeatMsgStr);
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
-}
-
-void SocketManager::SocketManagerImpl::handleShortConnection(int connfd) {
-    char buffer[1024];
-    ssize_t numBytes = read(connfd, buffer, sizeof(buffer) - 1);
-    if (numBytes <= 0) {
-        if (numBytes == 0 || (numBytes == -1 && (errno == ECONNRESET))) {
-            // 连接关闭或重置
-            close(connfd);
-            writeLog("Short connection closed.");
-        } else {
-            // 其他读取错误
-            close(connfd);
-            throw std::runtime_error("read() failed");
-        }
-    } else {
-        buffer[numBytes] = '\0';
-        writeLog("Received data from short connection: " + std::string(buffer));
-        // 解析 JSON 消息
-        try {
-            json j = json::parse(buffer);
-            handleAction(j["action"], j["msg"]);
-        } catch (const json::parse_error& e) {
-            writeLog("Failed to parse JSON message: " + std::string(e.what()));
-        }
-    }
-    // 处理完请求后关闭短连接
-    close(connfd);
-    writeLog("Short connection handled and closed.");
 }
