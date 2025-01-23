@@ -85,17 +85,25 @@ public:
     void handleAction(const std::string& action, const std::string& msg);
     void handleStart(const std::string& msg);
     void handleStop(const std::string& msg);
-    void handleReconnection();
     std::string actionToString(Action action);
     void sendMessage(const std::string& msg);
     void startHeartbeat();
 
+private:
     int long_listening_fd;
     int _epoll_fd;
-    std::unique_ptr<SharedMemoryManager> shm_manager;
-    pid_t child_pid;
+    int server_fds;
+    std::time_t last_heartbeat_time;
+    bool connection_alive;
     const char* server_path;
-    int server_fds; // 保持为单个文件描述符
+    pid_t child_pid;
+    int heartbeat_failures;
+    std::unique_ptr<SharedMemoryManager> shm_manager;
+    static const int MAX_HEARTBEAT_FAILURES = 3;
+    
+    void handleHeartbeatResponse(const std::string& msg);
+    bool isConnectionTimedOut() const;
+    void resetHeartbeatTimer();
 };
 
 #endif

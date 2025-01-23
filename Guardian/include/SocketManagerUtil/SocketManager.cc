@@ -14,8 +14,16 @@ void SocketManager::start() {
     }
 }
 
-SocketManager::SocketManagerImpl::SocketManagerImpl(const char* shm_name, const size_t shm_size, const char* server_path) : long_listening_fd(-1), _epoll_fd(-1), shm_manager(std::make_unique<SharedMemoryManager>(shm_name, shm_size)), server_path(server_path) {
-        // 设置信号处理函数
+SocketManager::SocketManagerImpl::SocketManagerImpl(const char* shm_name, const size_t shm_size, const char* server_path) 
+    : long_listening_fd(-1)
+    , _epoll_fd(-1)
+    , server_fds(-1)
+    , last_heartbeat_time(0)
+    , connection_alive(false)
+    , server_path(server_path)
+    , child_pid(0)
+    , heartbeat_failures(0)
+    , shm_manager(std::make_unique<SharedMemoryManager>(shm_name, shm_size)) {
         signal(SIGINT, SocketManagerImpl::signalHandler);
         signal(SIGTERM, SocketManagerImpl::signalHandler);
         std::cout << "SocketManagerImpl created." << std::endl;
@@ -24,10 +32,8 @@ SocketManager::SocketManagerImpl::SocketManagerImpl(const char* shm_name, const 
 void SocketManager::SocketManagerImpl::setupListeningSocket() {
     initSocketAddr(long_listening_fd);
 
-    // 获取长连接的端口号
     unsigned short longPort = getLocalPort(long_listening_fd);
 
-    // 使用 writePort 函数写入端口号
     if (!shm_manager->createSharedMemory()) {
         throw std::runtime_error("Failed to create shared memory in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
     }
@@ -44,7 +50,7 @@ void SocketManager::SocketManagerImpl::setupListeningSocket() {
     };
 
     std::string json_str = server_info.dump();
-    shm_manager->writeData(json_str); // shortPort 设置为 0 表示无短连接
+    shm_manager->writeData(json_str);
 
     // 设置为非阻塞模式
     int flags = fcntl(long_listening_fd, F_GETFL, 0);
@@ -57,13 +63,12 @@ void SocketManager::SocketManagerImpl::initSocketAddr(int& sockfd) {
         throw std::runtime_error("socket() failed in file " + std::string(__FILE__) + " at line " + std::to_string(__LINE__));
     }
 
-    // 设置地址复用
     int optval = 1;
     setsockopt(sockfd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(optval));
 
     struct sockaddr_in addr;
     addr.sin_family = AF_INET;
-    addr.sin_port = htons(0); // 让系统选择一个可用的端口
+    addr.sin_port = htons(0);
     addr.sin_addr.s_addr = INADDR_ANY;
 
     socklen_t ret = bind(sockfd, (struct sockaddr*)&addr, sizeof(struct sockaddr_in));
@@ -170,8 +175,8 @@ void SocketManager::SocketManagerImpl::handleEvents() {
                         // 连接关闭或重置
                         close(fd);
                         epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, fd, nullptr);
-                        writeLog("Connection closed. Attempting to reconnect...");
-                        handleReconnection();
+                        writeLog("Connection closed.");
+                        connection_alive = false;
                     } else {
                         // 其他读取错误
                         close(fd);
@@ -202,8 +207,6 @@ std::string SocketManager::SocketManagerImpl::actionToString(Action action) {
             return "startup";
         case Action::STOP:
             return "shutdown";
-        case Action::HEARTBEAT:
-            return "heartbeat";
         default:
             return "unknown";
     }
@@ -215,6 +218,8 @@ void SocketManager::SocketManagerImpl::handleAction(const std::string& action, c
         handleStart(msg);
     } else if (action == "shutdown") {
         handleStop(msg);
+    } else if (action == "heartbeat" && msg == "pong") {
+        handleHeartbeatResponse(msg);
     } else {
         writeLog("Unknown action: " + action);
     }
@@ -251,27 +256,49 @@ void SocketManager::SocketManagerImpl::startChildProcess() {
     }
 }
 
-void SocketManager::SocketManagerImpl::handleReconnection() {
-    while (true) {
-        // 创建 JSON 消息
-        json reconnectMsg = {
-            {"action", "reconnect"},
-            {"msg", "reconnection attempt"}
-        };
-        std::string reconnectMsgStr = reconnectMsg.dump();
-        sendMessage(reconnectMsgStr);
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+void SocketManager::SocketManagerImpl::startHeartbeat() {
+    connection_alive = true;
+    heartbeat_failures = 0;  // 重置心跳失败计数器
+    resetHeartbeatTimer();
+    
+    std::thread([this]() {
+        while (connection_alive) {
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            
+            if (isConnectionTimedOut()) {
+                heartbeat_failures++;
+                writeLog("Heartbeat failure detected, count: " + std::to_string(heartbeat_failures));
+                
+                if (heartbeat_failures >= MAX_HEARTBEAT_FAILURES) {
+                    writeLog("Max heartbeat failures reached, closing connection");
+                    connection_alive = false;
+                    close(server_fds);
+                    epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, server_fds, nullptr);
+                    break;
+                }
+            }
+
+            json heartbeat = {
+                {"action", "heartbeat"},
+                {"msg", "ping"}
+            };
+            sendMessage(heartbeat.dump());
+        }
+    }).detach();
+}
+
+void SocketManager::SocketManagerImpl::handleHeartbeatResponse(const std::string& msg) {
+    if (msg == "pong") {
+        resetHeartbeatTimer();
+        heartbeat_failures = 0;  // 收到响应时重置失败计数器
+        writeLog("Heartbeat response received, reset failure count");
     }
 }
 
-void SocketManager::SocketManagerImpl::startHeartbeat() {
-    while (true) {
-        json heartbeatMsg = {
-            {"action", "ping"},
-            {"msg", "heartbeat message"}
-        };
-        std::string heartbeatMsgStr = heartbeatMsg.dump();
-        sendMessage(heartbeatMsgStr);
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-    }
+bool SocketManager::SocketManagerImpl::isConnectionTimedOut() const {
+    return std::time(nullptr) - last_heartbeat_time > 5;  // 超过5秒没收到响应就算一次失败
+}
+
+void SocketManager::SocketManagerImpl::resetHeartbeatTimer() {
+    last_heartbeat_time = std::time(nullptr);
 }

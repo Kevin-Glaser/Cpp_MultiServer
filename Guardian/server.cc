@@ -179,17 +179,16 @@ private:
                 std::cout << "Received message: " << buffer << std::endl;
                 // 处理收到的消息
 
-                // 发送 "ok" 消息作为回复
                 auto j = json::parse(buffer);
-                if (j["action"] == "ping") {
+                if (j["action"] == "heartbeat" && j["msg"] == "ping") {
                     // 创建 JSON 消息
                     json response = {
-                        {"action", "pong"},
-                        {"msg", "ok"}
+                        {"action", "heartbeat"},
+                        {"msg", "pong"}
                     };
                     std::string response_msg = response.dump();
                     if (send(server_socket, response_msg.c_str(), response_msg.size(), 0) < 0) {
-                        throw std::runtime_error("Failed to send 'ok' message: " + std::string(strerror(errno)));
+                        throw std::runtime_error("Failed to send heartbeat response: " + std::string(strerror(errno)));
                     }
                 }
             }
