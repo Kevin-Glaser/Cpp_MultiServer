@@ -27,6 +27,7 @@
 #include <unordered_set>
 
 #include "SharedMemoryUtil/SharedMemoryUtil.h"
+#include "ProcessMonitorUtil/ServerMonitor.h"
 #include "SingletonBase/Singleton.h"
 #include "JsonUtil/json.hpp"
 
@@ -100,10 +101,13 @@ private:
     int heartbeat_failures;
     std::unique_ptr<SharedMemoryManager> shm_manager;
     static const int MAX_HEARTBEAT_FAILURES = 3;
+    std::unique_ptr<ServerMonitor> server_monitor;
     
     void handleHeartbeatResponse(const std::string& msg);
     bool isConnectionTimedOut() const;
     void resetHeartbeatTimer();
+    void startMonitoring();  // 添加新的监控启动函数
+    bool isServerRunning() const;  // 添加服务器运行状态检查
 };
 
 #endif

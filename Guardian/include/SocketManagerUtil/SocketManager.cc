@@ -251,8 +251,11 @@ void SocketManager::SocketManagerImpl::startChildProcess() {
         exit(1);
     } else {
         child_pid = pid;
-        // 父进程
         writeLog("Parent process continues.");
+        
+        // 创建服务器监控实例并启动监控
+        server_monitor = std::make_unique<ServerMonitor>(child_pid);
+        startMonitoring();
     }
 }
 
@@ -292,6 +295,12 @@ void SocketManager::SocketManagerImpl::handleHeartbeatResponse(const std::string
         resetHeartbeatTimer();
         heartbeat_failures = 0;  // 收到响应时重置失败计数器
         writeLog("Heartbeat response received, reset failure count");
+        
+        // 只在服务器监控存在且不健康时输出状态
+        if (server_monitor && !server_monitor->isHealthy()) {
+            writeLog("Warning: Server health check failed during heartbeat: " + 
+                    server_monitor->getStatusReport());
+        }
     }
 }
 
@@ -301,4 +310,38 @@ bool SocketManager::SocketManagerImpl::isConnectionTimedOut() const {
 
 void SocketManager::SocketManagerImpl::resetHeartbeatTimer() {
     last_heartbeat_time = std::time(nullptr);
+}
+
+void SocketManager::SocketManagerImpl::startMonitoring() {
+    std::thread([this]() {
+        while (isServerRunning()) {
+            std::this_thread::sleep_for(std::chrono::seconds(2));
+            
+            auto status = server_monitor->checkServerStatus();
+            if (!server_monitor->isHealthy()) {
+                writeLog("Server health check failed: " + server_monitor->getStatusReport());
+                
+                // 如果检测到死锁或严重的性能问题
+                if (status.is_deadlocked || 
+                    status.cpu_usage > 95 || 
+                    status.memory_usage > 95) {
+                    writeLog("Critical server condition detected, initiating restart...");
+                    stopChildProcess();
+                    startChildProcess();
+                    return;  // 退出当前监控线程
+                }
+            }
+        }
+    }).detach();
+}
+
+bool SocketManager::SocketManagerImpl::isServerRunning() const {
+    if (child_pid <= 0) return false;
+    
+    // 检查进程是否存在
+    if (kill(child_pid, 0) == -1 && errno == ESRCH) {
+        return false;
+    }
+    
+    return connection_alive;
 }
