@@ -89,6 +89,12 @@ private:
     int server_socket;
     unsigned short port; // 添加端口号变量
 
+    // 添加新的成员变量
+    static const int MAX_MISSED_HEARTBEATS = 3;  // 最大允许的连续未收到响应次数
+    int missed_heartbeat_count;
+    bool heartbeat_alive;
+    std::time_t last_heartbeat_response;
+
     void sendMessageToGuardian(const std::string& message) {
         buffer.write(message);
     }
@@ -157,6 +163,81 @@ private:
         }
     }
 
+    bool waitForStartupConfirmation() {
+        char buffer[1024];
+        // 等待守护进程的启动确认消息
+        ssize_t numBytes = recv(server_socket, buffer, sizeof(buffer) - 1, 0);
+        if (numBytes <= 0) {
+            std::cerr << "Failed to receive startup confirmation" << std::endl;
+            return false;
+        }
+
+        buffer[numBytes] = '\0';
+        try {
+            auto response = json::parse(buffer);
+            if (response["action"] == "startup" && response["msg"] == "confirmed") {
+                std::cout << "Received startup confirmation from guardian" << std::endl;
+                return true;
+            }
+        } catch (const json::parse_error& e) {
+            std::cerr << "Failed to parse startup confirmation: " << e.what() << std::endl;
+        }
+        return false;
+    }
+
+    void startHeartbeat() {
+        heartbeat_alive = true;
+        missed_heartbeat_count = 0;
+        last_heartbeat_response = std::time(nullptr);
+
+        std::thread([this]() {
+            while (heartbeat_alive) {
+                // 发送心跳包
+                json heartbeat = {
+                    {"action", "heartbeat"},
+                    {"msg", "ping"}
+                };
+                
+                try {
+                    if (send(server_socket, heartbeat.dump().c_str(), heartbeat.dump().size(), 0) < 0) {
+                        std::cerr << "Failed to send heartbeat" << std::endl;
+                        missed_heartbeat_count++;
+                    }
+                } catch (const std::exception& e) {
+                    std::cerr << "Error sending heartbeat: " << e.what() << std::endl;
+                    missed_heartbeat_count++;
+                }
+
+                // 检查是否收到响应
+                if (std::time(nullptr) - last_heartbeat_response > 5) {  // 5秒超时
+                    missed_heartbeat_count++;
+                    std::cout << "No heartbeat response, count: " << missed_heartbeat_count << std::endl;
+                }
+
+                // 检查是否需要重连
+                if (missed_heartbeat_count >= MAX_MISSED_HEARTBEATS) {
+                    std::cout << "Max missed heartbeats reached, attempting reconnection..." << std::endl;
+                    close(server_socket);
+                    if (reconnectToPort(port)) {
+                        // 重连成功，重置计数器
+                        missed_heartbeat_count = 0;
+                        last_heartbeat_response = std::time(nullptr);
+                    }
+                }
+
+                std::this_thread::sleep_for(std::chrono::seconds(3));  // 每3秒发送一次心跳
+            }
+        }).detach();
+    }
+
+    void handleHeartbeatResponse(const json& j) {
+        if (j["action"] == "heartbeat" && j["msg"] == "pong") {
+            missed_heartbeat_count = 0;  // 重置计数器
+            last_heartbeat_response = std::time(nullptr);
+            std::cout << "Received heartbeat response" << std::endl;
+        }
+    }
+
     void receiveMessages() {
         char buffer[1024];
         while (true) {
@@ -166,7 +247,10 @@ private:
                     // 连接关闭或重置
                     close(server_socket);
                     std::cout << "Connection closed. Attempting to reconnect..." << std::endl;
-                    reconnectToPort(port); // 使用端口号变量进行重连
+                    if (reconnectToPort(port)) {
+                        missed_heartbeat_count = 0;  // 重连成功后重置计数器
+                        last_heartbeat_response = std::time(nullptr);
+                    }
                     continue;
                 } else {
                     // 其他读取错误
@@ -177,19 +261,12 @@ private:
             } else {
                 buffer[numBytes] = '\0';
                 std::cout << "Received message: " << buffer << std::endl;
-                // 处理收到的消息
-
-                auto j = json::parse(buffer);
-                if (j["action"] == "heartbeat" && j["msg"] == "ping") {
-                    // 创建 JSON 消息
-                    json response = {
-                        {"action", "heartbeat"},
-                        {"msg", "pong"}
-                    };
-                    std::string response_msg = response.dump();
-                    if (send(server_socket, response_msg.c_str(), response_msg.size(), 0) < 0) {
-                        throw std::runtime_error("Failed to send heartbeat response: " + std::string(strerror(errno)));
-                    }
+                
+                try {
+                    auto j = json::parse(buffer);
+                    handleHeartbeatResponse(j);  // 处理心跳响应
+                } catch (const json::parse_error& e) {
+                    std::cerr << "Failed to parse message: " << e.what() << std::endl;
                 }
             }
         }
@@ -226,6 +303,15 @@ public:
 
             // 发送启动消息
             sendMessage("startup", port);
+            std::cout << "Startup message sent, waiting for confirmation..." << std::endl;
+
+            // 等待守护进程确认
+            if (!waitForStartupConfirmation()) {
+                throw std::runtime_error("Failed to receive startup confirmation");
+            }
+
+            // 收到确认后再启动心跳
+            startHeartbeat();
             std::cout << "Server started successfully" << std::endl;
 
             // 启动一个线程来接收消息

@@ -22,7 +22,6 @@ SocketManager::SocketManagerImpl::SocketManagerImpl(const char* shm_name, const 
     , connection_alive(false)
     , server_path(server_path)
     , child_pid(0)
-    , heartbeat_failures(0)
     , shm_manager(std::make_unique<SharedMemoryManager>(shm_name, shm_size)) {
         signal(SIGINT, SocketManagerImpl::signalHandler);
         signal(SIGTERM, SocketManagerImpl::signalHandler);
@@ -218,8 +217,8 @@ void SocketManager::SocketManagerImpl::handleAction(const std::string& action, c
         handleStart(msg);
     } else if (action == "shutdown") {
         handleStop(msg);
-    } else if (action == "heartbeat" && msg == "pong") {
-        handleHeartbeatResponse(msg);
+    } else if (action == "heartbeat" && msg == "ping") {
+        handleHeartbeatRequest(msg);
     } else {
         writeLog("Unknown action: " + action);
     }
@@ -228,9 +227,18 @@ void SocketManager::SocketManagerImpl::handleAction(const std::string& action, c
 void SocketManager::SocketManagerImpl::handleStart(const std::string& msg) {
     writeLog("Start action received: " + msg);
     if(std::string(msg).find("connected") != std::string::npos) {
+        // 发送启动确认消息
+        json response = {
+            {"action", "startup"},
+            {"msg", "confirmed"}
+        };
+        sendMessage(response.dump());
+        writeLog("Startup confirmation sent");
+        
+        // 清理共享内存并启动心跳监控
         writeLog("Shared memory will be closed to save memory");
         shm_manager->cleanupSharedMemory();
-        startHeartbeat();
+        initializeConnectionMonitor();
     }
 }
 
@@ -255,53 +263,38 @@ void SocketManager::SocketManagerImpl::startChildProcess() {
         
         // 创建服务器监控实例并启动监控
         server_monitor = std::make_unique<ServerMonitor>(child_pid);
-        startMonitoring();
+        startProcessMonitoring();
     }
 }
 
-void SocketManager::SocketManagerImpl::startHeartbeat() {
+// 修改心跳处理函数
+void SocketManager::SocketManagerImpl::handleHeartbeatRequest(const std::string& msg) {
+    resetHeartbeatTimer();
+    json response = {
+        {"action", "heartbeat"},
+        {"msg", "pong"}
+    };
+    sendMessage(response.dump());
+    writeLog("Heartbeat response sent");
+}
+
+// 简化启动心跳监控的函数
+void SocketManager::SocketManagerImpl::initializeConnectionMonitor() {
     connection_alive = true;
-    heartbeat_failures = 0;  // 重置心跳失败计数器
     resetHeartbeatTimer();
     
     std::thread([this]() {
         while (connection_alive) {
-            std::this_thread::sleep_for(std::chrono::seconds(5));
-            
+            std::this_thread::sleep_for(std::chrono::seconds(1));
             if (isConnectionTimedOut()) {
-                heartbeat_failures++;
-                writeLog("Heartbeat failure detected, count: " + std::to_string(heartbeat_failures));
-                
-                if (heartbeat_failures >= MAX_HEARTBEAT_FAILURES) {
-                    writeLog("Max heartbeat failures reached, closing connection");
-                    connection_alive = false;
-                    close(server_fds);
-                    epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, server_fds, nullptr);
-                    break;
-                }
+                writeLog("Connection timeout detected, closing connection");
+                connection_alive = false;
+                close(server_fds);
+                epoll_ctl(_epoll_fd, EPOLL_CTL_DEL, server_fds, nullptr);
+                break;
             }
-
-            json heartbeat = {
-                {"action", "heartbeat"},
-                {"msg", "ping"}
-            };
-            sendMessage(heartbeat.dump());
         }
     }).detach();
-}
-
-void SocketManager::SocketManagerImpl::handleHeartbeatResponse(const std::string& msg) {
-    if (msg == "pong") {
-        resetHeartbeatTimer();
-        heartbeat_failures = 0;  // 收到响应时重置失败计数器
-        writeLog("Heartbeat response received, reset failure count");
-        
-        // 只在服务器监控存在且不健康时输出状态
-        if (server_monitor && !server_monitor->isHealthy()) {
-            writeLog("Warning: Server health check failed during heartbeat: " + 
-                    server_monitor->getStatusReport());
-        }
-    }
 }
 
 bool SocketManager::SocketManagerImpl::isConnectionTimedOut() const {
@@ -312,7 +305,7 @@ void SocketManager::SocketManagerImpl::resetHeartbeatTimer() {
     last_heartbeat_time = std::time(nullptr);
 }
 
-void SocketManager::SocketManagerImpl::startMonitoring() {
+void SocketManager::SocketManagerImpl::startProcessMonitoring() {
     std::thread([this]() {
         while (isServerRunning()) {
             std::this_thread::sleep_for(std::chrono::seconds(2));

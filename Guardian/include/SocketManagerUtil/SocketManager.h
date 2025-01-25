@@ -88,9 +88,10 @@ public:
     void handleStop(const std::string& msg);
     std::string actionToString(Action action);
     void sendMessage(const std::string& msg);
-    void startHeartbeat();
+    void initializeConnectionMonitor();
 
 private:
+    // 调整成员变量顺序，与构造函数初始化列表顺序一致
     int long_listening_fd;
     int _epoll_fd;
     int server_fds;
@@ -98,16 +99,14 @@ private:
     bool connection_alive;
     const char* server_path;
     pid_t child_pid;
-    int heartbeat_failures;
     std::unique_ptr<SharedMemoryManager> shm_manager;
-    static const int MAX_HEARTBEAT_FAILURES = 3;
     std::unique_ptr<ServerMonitor> server_monitor;
     
-    void handleHeartbeatResponse(const std::string& msg);
+    void handleHeartbeatRequest(const std::string& msg);  // 重命名为更准确的函数名
     bool isConnectionTimedOut() const;
     void resetHeartbeatTimer();
-    void startMonitoring();  // 添加新的监控启动函数
-    bool isServerRunning() const;  // 添加服务器运行状态检查
+    void startProcessMonitoring();
+    bool isServerRunning() const;
 };
 
 #endif
