@@ -157,6 +157,7 @@ bool DataBasePool::DataBasePoolImpl::InsertData(std::shared_ptr<sql::Connection>
 
         delete stmt;
         delete pstmt;
+        return true;
     } catch (sql::SQLException& e) {
         std::cout << "SQL Error: " << e.what() << std::endl;
         std::cout << "MySQL Error Code: " << e.getErrorCode() << std::endl;

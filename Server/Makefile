@@ -3,13 +3,12 @@ CXX = g++
 CXXFLAGS = -std=c++17 -Wall -I./include
 
 TARGET = server
-SRC = server.cc ./include/DBUtil/DatabaseUtil.cc ./include/LogUtil/LogUtil.cc ./include/FtpUtil/ftplib.cc
 
 # dynamic library path
-LIBS = -L./lib -lpthread -lmysqlcppconn
+LIBS = -L./lib -lpthread -lrt -lmysqlcppconn
 
 # xxx.o
-OBJS = server.o DatabaseUtil.o LogUtil.o FtpUtil.o DatabasePoolUtil.o
+OBJS = server.o DatabaseUtil.o LogUtil.o FtpUtil.o DatabasePoolUtil.o ServerUtil.o ConfigManager.o
 OBJ_DIR = build
 
 $(shell mkdir -p $(OBJ_DIR))
@@ -31,6 +30,12 @@ DatabasePoolUtil.o: ./include/DBUtil/DatabasePoolUtil.cc
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 LogUtil.o: ./include/LogUtil/LogUtil.cc
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+ServerUtil.o: ./include/ServerUtil/ServerUtil.cc
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+ConfigManager.o: ./include/ConfigManager/ConfigManager.cc
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 FtpUtil.o: ./include/FtpUtil/ftplib.cc

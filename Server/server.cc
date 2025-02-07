@@ -2,10 +2,13 @@
 #include "LogUtil/LogUtil.h"
 #include "ThreadPool/ThreadPool.h"
 #include "FtpUtil/ftplib.h"
+#include "ServerUtil/ServerUtil.h"
+#include "ConfigManager/ConfigManager.h"
 
 #include <chrono>
 #include <iomanip>
 #include <sstream>
+
 
 
 void logCallback(char *str, void *arg, bool out) {
@@ -35,79 +38,6 @@ int InitFtpConn(std::string ipaddr, int port)
     return 0;
 }
 
-std::string readConfig(const std::string& filename, const std::string& key) {
-    std::ifstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to open file: " + filename);
-    }
-
-    std::string line;
-    while (std::getline(file, line)) {
-        size_t pos = line.find('=');
-        if (pos != std::string::npos) {
-            std::string fileKey = line.substr(0, pos);
-            std::string value = line.substr(pos + 1);
-            if (fileKey == key) {
-                return value;
-            }
-        }
-    }
-
-    throw std::runtime_error("Key not found: " + key);
-}
-
-// 写入配置文件
-void writeConfig(const std::string& filename, const std::string& key, const std::string& value) {
-    std::ifstream file(filename);
-    std::stringstream buffer;
-    bool keyFound = false;
-
-    if (file.is_open()) {
-        std::string line;
-        while (std::getline(file, line)) {
-            size_t pos = line.find('=');
-            if (pos != std::string::npos) {
-                std::string fileKey = line.substr(0, pos);
-                if (fileKey == key) {
-                    buffer << key << "=" << value << "\n";
-                    keyFound = true;
-                } else {
-                    buffer << line << "\n";
-                }
-            } else {
-                buffer << line << "\n";
-            }
-        }
-        file.close();
-    }
-
-    if (!keyFound) {
-        buffer << key << "=" << value << "\n";
-    }
-
-    std::ofstream outFile(filename);
-    if (!outFile.is_open()) {
-        throw std::runtime_error("Failed to open file for writing: " + filename);
-    }
-
-    outFile << buffer.str();
-    outFile.close();
-}
-
-// 创建配置文件
-void createConfig(const std::string& filename, const std::vector<std::pair<std::string, std::string>>& keyValuePairs) {
-    std::ofstream file(filename);
-    if (!file.is_open()) {
-        throw std::runtime_error("Failed to create file: " + filename);
-    }
-
-    for (const auto& pair : keyValuePairs) {
-        file << pair.first << "=" << pair.second << "\n";
-    }
-
-    file.close();
-}
-
 // 生成包含当前日期的文件名
 std::string getCurrentDateTimeFilename() {
     auto now = std::chrono::system_clock::now();
@@ -122,49 +52,42 @@ std::string getCurrentDateTimeFilename() {
 
 int main(int argc, char* argv[]) {
 
+    // 数据库连接池
     // std::string server = readConfig("config.conf", "server");
     // int port = std::atoi(readConfig("config.conf", "port").c_str());
     // InitFtpConn(server, port);
-
-    std::string url = readConfig("config.conf", "db_url");
-    std::string user = readConfig("config.conf", "db_user");
-    std::string pwd = readConfig("config.conf", "db_pwd");
-    std::string db = readConfig("config.conf", "db_database");
-    DataBasePool& pool = DataBasePool::GetInstance(4);
-
-    pool.CreateNewConn(url, user, pwd, db);
-    
-    std::shared_ptr<sql::Connection> con = pool.GetConnection(url, user, pwd, db);
-    if (con) {
-        std::cout << "Got a connection from the pool for " << url << std::endl;
-        pool.SetTransaction(con, "REPEATABLE READ");
-
-        map<string, string> info = {
-            {"username", "4235231334"},
-            {"email", "321434"},
-            {"password", "pas12352523"}
-        };
-        pool.InsertData(con, "users", info);
-        pool.ReleaseConnection(con);
-    } else {
-        std::cout << "Failed to get a connection from the pool for " << url << std::endl;
-    }
-    // 销毁连接
-    
-     pool.DestroyConn();
+    // std::string url = readConfig("config.conf", "db_url");
+    // std::string user = readConfig("config.conf", "db_user");
+    // std::string pwd = readConfig("config.conf", "db_pwd");
+    // std::string db = readConfig("config.conf", "db_database");
+    // DataBasePool& pool = DataBasePool::GetInstance(4);
+    // pool.CreateNewConn(url, user, pwd, db);
+    // std::shared_ptr<sql::Connection> con = pool.GetConnection(url, user, pwd, db);
+    // if (con) {
+    //     std::cout << "Got a connection from the pool for " << url << std::endl;
+    //     pool.SetTransaction(con, "REPEATABLE READ");
+    //     map<string, string> info = {
+    //         {"username", "4235231334"},
+    //         {"email", "321434"},
+    //         {"password", "pas12352523"}
+    //     };
+    //     pool.InsertData(con, "users", info);
+    //     pool.ReleaseConnection(con);
+    // } else {
+    //     std::cout << "Failed to get a connection from the pool for " << url << std::endl;
+    // }
+    // // 销毁连接
+    //  pool.DestroyConn();
 
 
+    // 线程池和任务队列
     // ThreadPool& thread_pool = ThreadPool::GetInstance(4);
     // Logger& logger = Logger::GetInstance();
-
     // auto terminalLogHandler = std::make_unique<TerminalLogHandler>();
-
     // std::string logFileName = getCurrentDateTimeFilename();
     // auto fileLogHandler = std::make_unique<FileLogHandler>(logFileName);
     // logger.AddHandler(std::move(terminalLogHandler));
     // logger.AddHandler(std::move(fileLogHandler));
-
-
     // // 添加测试int返回值的任务
     // std::future<int> r1 = pool.submitTask(sum1, 10, 20);
     //     pool.printStatus();
@@ -180,7 +103,6 @@ int main(int argc, char* argv[]) {
     //     pool.printStatus();
     // std::future<int> r7 = pool.submitTask(sum2, 10, 20, 30);
     //     pool.printStatus();
-
     // 添加成员函数任务,成员函数的返回值获取
     //thread_pool.submitTask(std::bind(&Logger::WriteLog, &logger, "Goodbye", DEBUG));
 	// r1.get();
@@ -190,9 +112,21 @@ int main(int argc, char* argv[]) {
     // r5.get();
   //  r6.get();
     // r7.get();
-
     // pool.printStatus();
-	return 0;
+	
+
+    ConfigManager configer;
+    configer.readConfigByKey("/home/demo/Documents/Cpp_MultiServer/Server/config.conf", "DB", "port");
+    srand(time(nullptr));
+    try {
+        ServerUtil server;
+        server.start();
+    } catch (const std::exception& e) {
+        std::cerr << "Exception occurred in main: " << e.what() << std::endl;
+        return EXIT_FAILURE;
+    }
+    return EXIT_SUCCESS;
+    return 0;
 
 }
 
