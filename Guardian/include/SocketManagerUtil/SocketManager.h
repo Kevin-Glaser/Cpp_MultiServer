@@ -1,4 +1,4 @@
-# ifndef __SOCKETMANAGER_H__
+#ifndef __SOCKETMANAGER_H__
 #define __SOCKETMANAGER_H__
 
 #include <iostream>
@@ -6,25 +6,26 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <cstring>
-#include <fstream>
-#include <ctime>
-#include <stdexcept>
-#include <sstream>
-#include <sys/epoll.h>
-#include <errno.h>
-#include <sys/wait.h>
-#include <sys/types.h>
 #include <mutex>
-#include <signal.h>
-#include <unordered_set>
+#include <chrono>
+
+#ifdef _WIN32
+    #include <winsock2.h>
+    #include <ws2tcpip.h>
+    #include <windows.h>
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <arpa/inet.h>
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <sys/mman.h>
+    #include <sys/stat.h>
+    #include <sys/epoll.h>
+    #include <sys/wait.h>
+    #include <sys/types.h>
+    #include <signal.h>
+#endif
 
 #include "SharedMemoryUtil/SharedMemoryUtil.h"
 #include "ProcessMonitorUtil/ServerMonitor.h"
@@ -41,6 +42,13 @@ enum class Action {
     HEARTBEAT
 };
 
+#ifdef _WIN32
+    using SOCKET_TYPE = SOCKET;
+    #define INVALID_SOCKET_VALUE INVALID_SOCKET
+#else
+    using SOCKET_TYPE = int;
+    #define INVALID_SOCKET_VALUE (-1)
+#endif
 
 class SocketManager {
 public:
@@ -65,12 +73,14 @@ public:
     SocketManagerImpl(const char* shm_name, const size_t shm_size, const char* server_path);
 
     ~SocketManagerImpl() {
-        if (long_listening_fd != -1) {
+        if (long_listening_fd != INVALID_SOCKET_VALUE) {
             close(long_listening_fd);
         }
+        #ifdef __linux__
         if (_epoll_fd != -1) {
             close(_epoll_fd);
         }
+        #endif
         stopChildProcess();
     }
 
@@ -92,9 +102,11 @@ public:
 
 private:
     // 调整成员变量顺序，与构造函数初始化列表顺序一致
-    int long_listening_fd;
+    SOCKET_TYPE long_listening_fd;
+    #ifdef __linux__
     int _epoll_fd;
-    int server_fds;
+    #endif
+    SOCKET_TYPE server_fds;
     std::time_t last_heartbeat_time;
     bool connection_alive;
     const char* server_path;
@@ -102,7 +114,7 @@ private:
     std::unique_ptr<SharedMemoryManager> shm_manager;
     std::unique_ptr<ServerMonitor> server_monitor;
     
-    void handleHeartbeatRequest(const std::string& msg);  // 重命名为更准确的函数名
+    void handleHeartbeatRequest();
     bool isConnectionTimedOut() const;
     void resetHeartbeatTimer();
     void startProcessMonitoring();

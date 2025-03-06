@@ -218,7 +218,7 @@ void SocketManager::SocketManagerImpl::handleAction(const std::string& action, c
     } else if (action == "shutdown") {
         handleStop(msg);
     } else if (action == "heartbeat" && msg == "ping") {
-        handleHeartbeatRequest(msg);
+        handleHeartbeatRequest();
     } else {
         writeLog("Unknown action: " + action);
     }
@@ -268,7 +268,7 @@ void SocketManager::SocketManagerImpl::startChildProcess() {
 }
 
 // 修改心跳处理函数
-void SocketManager::SocketManagerImpl::handleHeartbeatRequest(const std::string& msg) {
+void SocketManager::SocketManagerImpl::handleHeartbeatRequest() {
     resetHeartbeatTimer();
     json response = {
         {"action", "heartbeat"},

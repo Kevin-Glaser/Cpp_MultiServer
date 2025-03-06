@@ -10,62 +10,83 @@
 #include <sstream>
 #include <stdexcept>
 #include <signal.h>
+#include <filesystem>
 
 static const char* SHM_NAME = "test_shm";
 static const size_t SHM_SIZE = 4096;
 
 SharedMemoryBuffer::SharedMemoryBuffer(const char* name, size_t size) 
-    : shm_fd(-1)
-    , name(name)
-    , size(size)
-    , data(nullptr)
-{
+    : name(name), size(size) {
+#ifdef WIN32_PLATFORM
+    hMapFile = CreateFileMapping(
+        INVALID_HANDLE_VALUE,
+        NULL,
+        PAGE_READWRITE,
+        0,
+        size,
+        name);
+    
+    if (hMapFile == NULL) {
+        throw std::runtime_error("Could not create file mapping object");
+    }
+
+    pBuf = MapViewOfFile(hMapFile,
+        FILE_MAP_ALL_ACCESS,
+        0,
+        0,
+        size);
+
+    if (pBuf == NULL) {
+        CloseHandle(hMapFile);
+        throw std::runtime_error("Could not map view of file");
+    }
+#else
     shm_fd = shm_open(name, O_RDWR, 0666);
     if (shm_fd == -1) {
-        throw std::runtime_error("Failed to open shared memory: " + std::string(strerror(errno)));
+        throw std::runtime_error("Failed to open shared memory");
     }
 
-    struct stat sb;
-    if (fstat(shm_fd, &sb) == -1) {
-        throw std::runtime_error("Failed to get shared memory size: " + std::string(strerror(errno)));
-    }
-    if (sb.st_size < static_cast<off_t>(size)) {
-        throw std::runtime_error("Shared memory object is too small");
-    }
-
-    data = static_cast<char*>(mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
+    data = static_cast<char*>(mmap(NULL, size, 
+        PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0));
     if (data == MAP_FAILED) {
         close(shm_fd);
-        throw std::runtime_error("Failed to map shared memory: " + std::string(strerror(errno)));
+        throw std::runtime_error("Failed to map shared memory");
     }
-
-    std::cout << "Shared memory mapped successfully." << std::endl;
+#endif
 }
 
 SharedMemoryBuffer::~SharedMemoryBuffer() {
-    if (data != nullptr) {
-        if (munmap(data, size) == -1) {
-            std::cerr << "Failed to unmap shared memory: " << strerror(errno) << std::endl;
-        }
+#ifdef WIN32_PLATFORM
+    if (pBuf) {
+        UnmapViewOfFile(pBuf);
+    }
+    if (hMapFile) {
+        CloseHandle(hMapFile);
+    }
+#else
+    if (data != MAP_FAILED) {
+        munmap(data, size);
     }
     if (shm_fd != -1) {
         close(shm_fd);
     }
+#endif
 }
 
 void SharedMemoryBuffer::write(const std::string& message) {
-    if (message.length() >= size) {
-        throw std::length_error("Message length exceeds buffer size");
-    }
+#ifdef WIN32_PLATFORM
+    strncpy_s(static_cast<char*>(pBuf), size, message.c_str(), message.length());
+#else
     strncpy(data, message.c_str(), size);
+#endif
 }
 
 std::string SharedMemoryBuffer::read() const {
+#ifdef WIN32_PLATFORM
+    return std::string(static_cast<char*>(pBuf));
+#else
     return std::string(data);
-}
-
-char* SharedMemoryBuffer::getData() const {
-    return data;
+#endif
 }
 
 // ServerUtil implementation

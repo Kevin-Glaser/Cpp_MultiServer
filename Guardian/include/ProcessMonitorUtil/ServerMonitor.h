@@ -1,12 +1,21 @@
 #ifndef __SERVER_MONITOR_H__
 #define __SERVER_MONITOR_H__
 
-#include <sys/resource.h>
-#include <sys/sysinfo.h>
-#include <sys/times.h>
-#include <fstream>
 #include <chrono>
-#include <dirent.h>
+#include <string>
+#include <fstream>
+
+#ifdef _WIN32
+    #include <windows.h>
+    #include <psapi.h>
+    #include <pdh.h>
+    #pragma comment(lib, "pdh.lib")
+#else
+    #include <sys/resource.h>
+    #include <sys/sysinfo.h>
+    #include <sys/times.h>
+    #include <dirent.h>
+#endif
 
 #include "JsonUtil/json.hpp"
 
@@ -26,8 +35,17 @@ public:
                         is_deadlocked(false), last_active_time(0), thread_count(0) {}
     };
 
-    explicit ServerMonitor(pid_t monitored_pid);
-    ~ServerMonitor() = default;
+    #ifdef _WIN32
+        explicit ServerMonitor(DWORD monitored_pid);
+    #else
+        explicit ServerMonitor(pid_t monitored_pid);
+    #endif
+
+    ~ServerMonitor() {
+        #ifdef _WIN32
+            if (cpu_query) PdhCloseQuery(cpu_query);
+        #endif
+    }
 
     // 主要监控函数
     ServerStatus checkServerStatus();
@@ -35,7 +53,14 @@ public:
     std::string getStatusReport() const;
 
 private:
-    pid_t pid;                     // 被监控的进程ID
+    #ifdef _WIN32
+        DWORD pid;
+        PDH_HQUERY cpu_query;
+        PDH_HCOUNTER cpu_counter;
+    #else
+        pid_t pid;
+    #endif
+
     ServerStatus current_status;    // 当前状态
     std::chrono::steady_clock::time_point last_cpu_check;
     unsigned long last_cpu_total;   // 上次CPU统计总量

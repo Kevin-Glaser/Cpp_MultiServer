@@ -1,69 +1,111 @@
 #include "ServerMonitor.h"
 
-// ServerMonitor 实现
+#ifdef _WIN32
+ServerMonitor::ServerMonitor(DWORD monitored_pid) : pid(monitored_pid) {
+    PdhOpenQuery(NULL, 0, &cpu_query);
+    std::string counter_path = "\\Process(" + std::to_string(pid) + ")\\% Processor Time";
+    PdhAddCounter(cpu_query, counter_path.c_str(), 0, &cpu_counter);
+    PdhCollectQueryData(cpu_query);
+}
+#else
 ServerMonitor::ServerMonitor(pid_t monitored_pid) : pid(monitored_pid) {
     last_cpu_check = std::chrono::steady_clock::now();
     last_cpu_total = readTotalCpuTime();
     last_cpu_proc = readProcessCpuTime();
 }
+#endif
 
 double ServerMonitor::getCpuUsage() {
-    auto current_time = std::chrono::steady_clock::now();
-    unsigned long current_cpu_total = readTotalCpuTime();
-    unsigned long current_cpu_proc = readProcessCpuTime();
-    
-    auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>
-                    (current_time - last_cpu_check).count();
-    
-    if (time_diff == 0) return 0.0;
-    
-    double cpu_usage = 100.0 * (current_cpu_proc - last_cpu_proc) / 
-                      (current_cpu_total - last_cpu_total);
-    
-    last_cpu_check = current_time;
-    last_cpu_total = current_cpu_total;
-    last_cpu_proc = current_cpu_proc;
-    
-    return std::max(0.0, std::min(100.0, cpu_usage));
+    #ifdef _WIN32
+        PDH_FMT_COUNTERVALUE counter_value;
+        PdhCollectQueryData(cpu_query);
+        PdhGetFormattedCounterValue(cpu_counter, PDH_FMT_DOUBLE, NULL, &counter_value);
+        return counter_value.doubleValue;
+    #else
+        auto current_time = std::chrono::steady_clock::now();
+        unsigned long current_cpu_total = readTotalCpuTime();
+        unsigned long current_cpu_proc = readProcessCpuTime();
+        
+        auto time_diff = std::chrono::duration_cast<std::chrono::milliseconds>
+                        (current_time - last_cpu_check).count();
+        
+        if (time_diff == 0) return 0.0;
+        
+        double cpu_usage = 100.0 * (current_cpu_proc - last_cpu_proc) / 
+                          (current_cpu_total - last_cpu_total);
+        
+        last_cpu_check = current_time;
+        last_cpu_total = current_cpu_total;
+        last_cpu_proc = current_cpu_proc;
+        
+        return std::max(0.0, std::min(100.0, cpu_usage));
+    #endif
 }
 
 double ServerMonitor::getMemoryUsage() {
-    std::ifstream statm("/proc/" + std::to_string(pid) + "/statm");
-    if (!statm.is_open()) return 0.0;
-    
-    unsigned long vm_size, resident;
-    statm >> vm_size >> resident;
-    statm.close();
-    
-    struct sysinfo si;
-    if (sysinfo(&si) != 0) return 0.0;
-    
-    return (resident * 100.0) / (si.totalram / si.mem_unit);
+    #ifdef _WIN32
+        PROCESS_MEMORY_COUNTERS_EX pmc;
+        if (GetProcessMemoryInfo(GetCurrentProcess(), (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+            MEMORYSTATUSEX memInfo;
+            memInfo.dwLength = sizeof(MEMORYSTATUSEX);
+            GlobalMemoryStatusEx(&memInfo);
+            return (double)pmc.WorkingSetSize / memInfo.ullTotalPhys * 100.0;
+        }
+        return 0.0;
+    #else
+        std::ifstream statm("/proc/" + std::to_string(pid) + "/statm");
+        if (!statm.is_open()) return 0.0;
+        
+        unsigned long vm_size, resident;
+        statm >> vm_size >> resident;
+        statm.close();
+        
+        struct sysinfo si;
+        if (sysinfo(&si) != 0) return 0.0;
+        
+        return (resident * 100.0) / (si.totalram / si.mem_unit);
+    #endif
 }
 
+
+
 bool ServerMonitor::checkDeadlock() {
-    std::string proc_status = "/proc/" + std::to_string(pid) + "/status";
-    std::ifstream status(proc_status);
-    if (!status.is_open()) return true; // 如果无法读取进程状态，认为进程可能已经死锁
-    
-    std::string line;
-    std::string state;
-    while (std::getline(status, line)) {
-        if (line.substr(0, 6) == "State:") {
-            state = line.substr(7);
-            break;
-        }
-    }
-    
-    // 检查进程状态，D状态表示不可中断的睡眠状态，可能表示死锁
-    if (state.find('D') != std::string::npos) {
-        time_t current_time = std::time(nullptr);
-        if (current_time - current_status.last_active_time > DEADLOCK_TIMEOUT) {
+    #ifdef _WIN32
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (hProcess == NULL) return true;
+        
+        FILETIME creation, exit, kernel, user;
+        if (!GetProcessTimes(hProcess, &creation, &exit, &kernel, &user)) {
+            CloseHandle(hProcess);
             return true;
         }
-    }
-    
-    return false;
+        
+        CloseHandle(hProcess);
+        return false;
+    #else
+        std::string proc_status = "/proc/" + std::to_string(pid) + "/status";
+        std::ifstream status(proc_status);
+        if (!status.is_open()) return true; // 如果无法读取进程状态，认为进程可能已经死锁
+        
+        std::string line;
+        std::string state;
+        while (std::getline(status, line)) {
+            if (line.substr(0, 6) == "State:") {
+                state = line.substr(7);
+                break;
+            }
+        }
+        
+        // 检查进程状态，D状态表示不可中断的睡眠状态，可能表示死锁
+        if (state.find('D') != std::string::npos) {
+            time_t current_time = std::time(nullptr);
+            if (current_time - current_status.last_active_time > DEADLOCK_TIMEOUT) {
+                return true;
+            }
+        }
+        
+        return false;
+    #endif
 }
 
 unsigned long ServerMonitor::readProcessCpuTime() {
@@ -118,21 +160,35 @@ std::string ServerMonitor::getStatusReport() const {
 }
 
 int ServerMonitor::getThreadCount() {
-    std::string task_dir = "/proc/" + std::to_string(pid) + "/task";
-    int count = 0;
-    
-    DIR* dir = opendir(task_dir.c_str());
-    if (dir != nullptr) {
-        struct dirent* entry;
-        while ((entry = readdir(dir)) != nullptr) {
-            if (entry->d_name[0] != '.') {
-                count++;
-            }
+    #ifdef _WIN32
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
+        if (hProcess == NULL) return 0;
+        
+        PROCESS_MEMORY_COUNTERS_EX pmc;
+        if (!GetProcessMemoryInfo(hProcess, (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
+            CloseHandle(hProcess);
+            return 0;
         }
-        closedir(dir);
-    }
-    
-    return count;
+        
+        CloseHandle(hProcess);
+        return pmc.NumberOfThreads;
+    #else
+        std::string task_dir = "/proc/" + std::to_string(pid) + "/task";
+        int count = 0;
+        
+        DIR* dir = opendir(task_dir.c_str());
+        if (dir != nullptr) {
+            struct dirent* entry;
+            while ((entry = readdir(dir)) != nullptr) {
+                if (entry->d_name[0] != '.') {
+                    count++;
+                }
+            }
+            closedir(dir);
+        }
+        
+        return count;
+    #endif
 }
 
 void ServerMonitor::updateLastActiveTime() {

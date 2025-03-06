@@ -2,31 +2,23 @@
 #define SHARED_MEMORY_UTIL_H
 
 #include <iostream>
-#include <thread>
 #include <string>
-#include <vector>
-#include <memory>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <sys/mman.h>
-#include <sys/stat.h>
-#include <cstring>
+#include <mutex>
 #include <fstream>
 #include <ctime>
-#include <stdexcept>
-#include <sstream>
-#include <sys/epoll.h>
-#include <errno.h>
-#include <sys/wait.h>
-#include <sys/types.h>
-#include <mutex>
-#include <signal.h>
-#include <unordered_set>
+#include <cstring>
 
 #include "JsonUtil/json.hpp"
+
+#ifdef _WIN32
+    #include <windows.h>
+#else
+    #include <sys/mman.h>
+    #include <sys/stat.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include <errno.h>
+#endif
 
 static std::mutex log_mutex;
 using json = nlohmann::json;
@@ -35,7 +27,7 @@ static void writeLog(const std::string& message) {
     // 锁定互斥锁，保证同一时间只有一个线程可以进入临界区
     std::lock_guard<std::mutex> lock(log_mutex);
 
-    std::ofstream log("/home/demo/Documents/Cpp_MultiServer/Guardian/guardian.log", std::ios_base::app);
+    std::ofstream log("./guardian.log", std::ios_base::app);
     if (log.is_open()) {
         // 获取当前时间
         time_t now = time(nullptr);
@@ -55,16 +47,29 @@ static void writeLog(const std::string& message) {
     }
 }
 
-
 class SharedMemoryManager {
 public:
+    // 保持原有的构造函数接口不变
     SharedMemoryManager(const char* name, const size_t size)
-        : shm_name(name), shm_size(size), shm_fd(-1), shared_data(nullptr) {}
+        : shm_name(name)
+        , shm_size(size)
+        #ifdef _WIN32
+            , shm_handle(NULL)
+            , shared_data(NULL)
+        #else
+            , shm_fd(-1)
+            , shared_data(nullptr)
+        #endif
+    {
+        // 保持原有的初始化逻辑
+        writeLog("SharedMemoryManager created with name: " + std::string(name));
+    }
 
     ~SharedMemoryManager() {
         cleanupSharedMemory();
     }
 
+    // 保持原有的公共接口不变
     bool createSharedMemory();
     void writeData(const std::string& jsonStr);
     void cleanupSharedMemory();
@@ -72,8 +77,14 @@ public:
 private:
     const char* shm_name;
     size_t shm_size;
-    int shm_fd;
-    char* shared_data;
+
+    #ifdef _WIN32
+        HANDLE shm_handle;
+        LPVOID shared_data;
+    #else
+        int shm_fd;
+        char* shared_data;
+    #endif
 };
 
 #endif

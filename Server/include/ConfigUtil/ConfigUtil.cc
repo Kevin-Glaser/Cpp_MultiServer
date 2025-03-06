@@ -1,8 +1,42 @@
-#include "ConfigManager.h"
+#include "ConfigUtil.h"
 #include <fstream>
 #include <filesystem>
 #include <stdexcept>
 #include <iostream>
+
+namespace fs = std::filesystem;
+
+std::filesystem::path ConfigManager::getConfigPath(const std::string& filename) {
+    fs::path configPath;
+#ifdef WIN32_PLATFORM
+    char buffer[MAX_PATH];
+    GetModuleFileNameA(NULL, buffer, MAX_PATH);
+    configPath = fs::path(buffer).parent_path() / filename;
+#else
+    char buffer[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", buffer, sizeof(buffer)-1);
+    if (len != -1) {
+        buffer[len] = '\0';
+        configPath = fs::path(buffer).parent_path() / filename;
+    } else {
+        // 如果readlink失败，使用当前工作目录
+        configPath = fs::current_path() / filename;
+    }
+#endif
+    return configPath;
+}
+
+std::filesystem::path ConfigManager::getBackupPath(const std::string& filename) {
+    return getConfigPath(filename).concat(".bak");
+}
+
+bool ConfigManager::isValidPath(const std::filesystem::path& path) {
+    std::error_code ec;
+    if (fs::exists(path, ec)) {
+        return fs::is_regular_file(path, ec);
+    }
+    return true;  // 允许创建新文件
+}
 
 std::string ConfigManager::readConfigByKey(const std::string& filename,
                                     const std::string& section,
@@ -45,33 +79,46 @@ bool ConfigManager::writeConfig(const std::string& filename,
 
 bool ConfigManager::makeBackup(const std::string& filename) {
     try {
-        if (std::filesystem::exists(filename)) {
-            std::filesystem::copy_file(filename, filename + ".bak",
-                std::filesystem::copy_options::overwrite_existing);
+        fs::path srcPath = getConfigPath(filename);
+        fs::path backupPath = getBackupPath(filename);
+        
+        if (fs::exists(srcPath)) {
+            fs::copy_file(srcPath, backupPath, 
+                fs::copy_options::overwrite_existing);
         }
         return true;
-    } catch (...) {
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Backup failed: " << e.what() << std::endl;
         return false;
     }
 }
 
 bool ConfigManager::restoreFromBackup(const std::string& filename) {
     try {
-        if (std::filesystem::exists(filename + ".bak")) {
-            std::filesystem::rename(filename + ".bak", filename);
+        fs::path srcPath = getConfigPath(filename);
+        fs::path backupPath = getBackupPath(filename);
+        
+        if (fs::exists(backupPath)) {
+            fs::rename(backupPath, srcPath);
         }
         return true;
-    } catch (...) {
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Restore failed: " << e.what() << std::endl;
         return false;
     }
 }
 
 std::map<std::string, std::map<std::string, std::string>> 
 ConfigManager::parseConfigFile(const std::string& filename) {
+    fs::path configPath = getConfigPath(filename);
+    if (!isValidPath(configPath)) {
+        throw std::runtime_error("Invalid config file path: " + configPath.string());
+    }
+
     std::map<std::string, std::map<std::string, std::string>> config;
-    std::ifstream file(filename);
+    std::ifstream file(configPath);
     if (!file.is_open()) {
-        throw std::runtime_error("Cannot open file: " + filename);
+        throw std::runtime_error("Cannot open file: " + configPath.string());
     }
 
     std::string line, currentSection;
@@ -100,8 +147,14 @@ ConfigManager::parseConfigFile(const std::string& filename) {
 bool ConfigManager::writeConfigFile(const std::string& filename,
     const std::map<std::string, std::map<std::string, std::string>>& config) {
     
-    std::string tempFile = filename + ".tmp";
-    std::ofstream file(tempFile);
+    fs::path configPath = getConfigPath(filename);
+    fs::path tempPath = configPath.concat(".tmp");
+
+    if (!isValidPath(configPath)) {
+        return false;
+    }
+
+    std::ofstream file(tempPath);
     if (!file) {
         return false;
     }
@@ -116,15 +169,16 @@ bool ConfigManager::writeConfigFile(const std::string& filename,
 
     file.close();
     if (file.fail()) {
-        std::filesystem::remove(tempFile);
+        std::filesystem::remove(tempPath);
         return false;
     }
 
     try {
-        std::filesystem::rename(tempFile, filename);
+        fs::rename(tempPath, configPath);
         return true;
-    } catch (...) {
-        std::filesystem::remove(tempFile);
+    } catch (const fs::filesystem_error& e) {
+        std::cerr << "Write failed: " << e.what() << std::endl;
+        fs::remove(tempPath);
         return false;
     }
 }

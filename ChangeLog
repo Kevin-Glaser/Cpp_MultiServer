@@ -30,3 +30,6 @@ V2.1.0
 V2.2.0
 新增:systemd守护进程新增监听server进程运行资源状态
 新增:systemd守护进程与server的简单心跳检测
+
+V2.3.0
+新增:支持跨windows和linux平台编译,以及cmake的编译

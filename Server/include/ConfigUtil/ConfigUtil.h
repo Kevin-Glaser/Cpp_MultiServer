@@ -7,8 +7,21 @@
 
 #ifndef __CONFIGMANAGER_H__
 #define __CONFIGMANAGER_H__
+
 #include <string>
 #include <map>
+#include <filesystem>
+
+#ifdef WIN32_PLATFORM
+    #include <windows.h>
+#else
+    #include <unistd.h>
+    #include <limits.h>
+    #include <linux/limits.h>
+    #ifndef PATH_MAX
+        #define PATH_MAX 4096
+    #endif
+#endif
 
 class ConfigManager {
 public:
@@ -85,6 +98,10 @@ private:
     static bool writeConfigFile(const std::string& filename,
                               const std::map<std::string, 
                               std::map<std::string, std::string>>& config);
+
+    static std::filesystem::path getConfigPath(const std::string& filename);
+    static std::filesystem::path getBackupPath(const std::string& filename);
+    static bool isValidPath(const std::filesystem::path& path);
 };
 
 #endif

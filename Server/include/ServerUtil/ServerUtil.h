@@ -6,7 +6,19 @@
 #include <cstdlib>
 #include <ctime>
 #include <thread>
-#include <signal.h>
+
+#ifdef WIN32_PLATFORM
+    #include <winsock2.h>
+    #include <windows.h>
+    #pragma comment(lib, "ws2_32.lib")
+#else
+    #include <sys/socket.h>
+    #include <netinet/in.h>
+    #include <unistd.h>
+    #include <fcntl.h>
+    #include <sys/mman.h>
+    #include <signal.h>
+#endif
 
 #include "../JsonUtil/json.hpp"
 
@@ -14,17 +26,26 @@ using json = nlohmann::json;
 
 class SharedMemoryBuffer {
 private:
-    int shm_fd;
-    const char* name;    // 移到前面
-    const size_t size;   // 移到前面
-    char* data;         // 移到最后
+    #ifdef WIN32_PLATFORM
+        HANDLE hMapFile;
+        LPVOID pBuf;
+    #else
+        int shm_fd;
+        char* data;
+    #endif
+    const char* name;
+    const size_t size;
 
 public:
     SharedMemoryBuffer(const char* name, size_t size);
     ~SharedMemoryBuffer();
     void write(const std::string& message);
     std::string read() const;
-    char* getData() const;
+    #ifdef WIN32_PLATFORM
+        LPVOID getData() const { return pBuf; }
+    #else
+        char* getData() const { return data; }
+    #endif
 };
 
 class ServerUtil {
