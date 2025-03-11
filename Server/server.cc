@@ -56,8 +56,8 @@ int main(int argc, char* argv[]) {
 //     thread_pool.printStatus();
 	
 
-    ConfigManager configer;
-    configer.readConfigByKey("/home/demo/Documents/Cpp_MultiServer/Server/config.conf", "DB", "port");
+    // ConfigManager configer;
+    // configer.readConfigByKey("/home/demo/Documents/Cpp_MultiServer/Server/config.conf", "DB", "port");
     srand(time(nullptr));
     try {
         ServerUtil server;
