@@ -1,8 +1,15 @@
 /**
- * In this component, we will implement a ConfigManager class to read and write configuration 
- * files based on specific conditions.
- * This component will use the filesystem library from C++17 instead of the older fstream, 
- * as filesystem provides more comprehensive and safer functions
+ * @file ConfigUtil.h
+ * @author KevinGlaser
+ * @brief  * In this component, we will implement a ConfigManager class to read and write configuration 
+ *           files based on specific conditions.
+ *           This component will use the filesystem library from C++17 instead of the older fstream, 
+ *           as filesystem provides more comprehensive and safer functions
+ * @version 0.1
+ * @date 2025-03-09
+ * 
+ * @copyright Copyright (c) 2025
+ * 
  */
 
 #ifndef __CONFIGMANAGER_H__
@@ -99,8 +106,27 @@ private:
                               const std::map<std::string, 
                               std::map<std::string, std::string>>& config);
 
+    /**
+     * @brief Get the Config Path object
+     * @param filename 
+     * @return * std::filesystem::path 
+     */
     static std::filesystem::path getConfigPath(const std::string& filename);
+
+    /**
+     * @brief Get the Backup Path object
+     * @param filename 
+     * @return std::filesystem::path 
+     */
     static std::filesystem::path getBackupPath(const std::string& filename);
+
+    /**
+     * @brief Check if the path is valid
+     * 
+     * @param path 
+     * @return true equals to the path is valid
+     * @return false equals to the path is invalid
+     */
     static bool isValidPath(const std::filesystem::path& path);
 };
 

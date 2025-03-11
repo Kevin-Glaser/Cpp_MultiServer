@@ -6,7 +6,7 @@ CXXFLAGS = -std=c++17 -Wall \
            -IServer/include \
            -IGuardian/include
 
-# 路径配置
+# 编译后文件路径配置
 BUILD_DIR   = build
 OBJ_DIR     = $(BUILD_DIR)/obj
 BIN_DIR     = $(BUILD_DIR)/bin

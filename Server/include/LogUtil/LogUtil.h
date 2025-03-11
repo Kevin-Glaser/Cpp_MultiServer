@@ -1,3 +1,14 @@
+/**
+ * @file LogUtil.h
+ * @author KevinGlaser
+ * @brief LogUtil class for logging messages to terminal or file
+ * @version 0.1
+ * @date 2025-03-09
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
+
 #ifndef __LOGUTIL_H__
 #define __LOGUTIL_H__
 

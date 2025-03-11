@@ -59,19 +59,49 @@ private:
     bool heartbeat_alive;
     std::time_t last_heartbeat_response;
 
+    /**
+     * @brief send message to guardian by shared memory
+     * 
+     * @param message message to be sent
+     */
     void sendMessageToGuardian(const std::string& message);
+
+    /**
+     * @brief handle signal from terminal
+     * 
+     * @param signum 
+     * @param info 
+     * @param context 
+     */
     static void handleSignal(int signum, siginfo_t* info, void* context);
     void registerSignalHandlers();
     bool connectToPort(unsigned short port);
     bool reconnectToPort(unsigned short port);
     void sendMessage(const char* action, unsigned short port);
     bool waitForStartupConfirmation();
+
+    /**
+     * @brief startup heartbeat and send heartbeat message to guardian by socket
+     *        if the count of missed heartbeats reaches the maximum, reconnect to the port
+     * 
+     */
     void startHeartbeat();
+
+    /**
+     * @brief receive and parse the json message from guardian, if success, reset the count of missed heartbeats
+     * 
+     * @param j message from guardian in json format
+     */
     void handleHeartbeatResponse(const json& j);
     void receiveMessages();
 
 public:
     ServerUtil();
+
+    /**
+     * @brief startup the tcp connection and heartbeat with guardian
+     * 
+     */
     void start();
 };
 

@@ -1,3 +1,13 @@
+/**
+ * @file Singleton.h
+ * @author KevinGlaser
+ * @brief Base class for singleton pattern
+ * @version 0.1
+ * @date 2025-03-09
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
 #ifndef __SINGLETON_H__
 #define __SINGLETON_H__
 

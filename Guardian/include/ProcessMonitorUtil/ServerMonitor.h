@@ -1,3 +1,14 @@
+/**
+ * @file ServerMonitor.h
+ * @author KevinGlaser
+ * @brief This is a monitor to check the system resources use of a specific server process
+ * @version 0.1
+ * @date 2025-03-09
+ * 
+ * @copyright Copyright (c) 2025
+ * 
+ */
+
 #ifndef __SERVER_MONITOR_H__
 #define __SERVER_MONITOR_H__
 
@@ -70,16 +81,60 @@ private:
     static const int MEMORY_THRESHOLD = 85;   // 内存使用率警告阈值 (%)
     static const int DEADLOCK_TIMEOUT = 60;   // 死锁检测超时时间 (秒)
     
-    // 具体监控函数
+    /**
+     * @brief Get the Cpu Usage object
+     * 
+     * @return double return the CPU usage of the server process
+     */
     double getCpuUsage();
+
+    /**
+     * @brief Get the Memory Usage object
+     * 
+     * @return double return the memory usage of the server process
+     */
     double getMemoryUsage();
+
+    /**
+     * @brief Get the System Load Average object
+     * 
+     * @return double return the system load average
+     */
     double getSystemLoadAverage();
+    
+    /**
+     * @brief check if server process has been locked
+     * 
+     * @return true return locked
+     * @return false return unlocked
+     */
     bool checkDeadlock();
+
+    /**
+     * @brief Get the Thread Count object of server process
+     * 
+     * @return int return the thread count of server process
+     */
     int getThreadCount();
+
+    /**
+     * @brief update the last active time of server process
+     * 
+     */
     void updateLastActiveTime();
     
-    // 辅助函数
+    /**
+     * @brief tool function to read the process CPU time of last time
+     * 
+     * @return [unsigned long] return the process CPU time of last time
+     */
     unsigned long readProcessCpuTime();
+
+    /**
+     * @brief tool function to read the  total CPU time of last time
+     * 
+     * @return [unsigned long] return the total CPU time of last time
+     */
     unsigned long readTotalCpuTime();
 };
 

@@ -1,10 +1,14 @@
 #include "ServerMonitor.h"
+#include <string>
 
+#ifdef _WIN32
+#include <tlhelp32.h>
+#endif
 #ifdef _WIN32
 ServerMonitor::ServerMonitor(DWORD monitored_pid) : pid(monitored_pid) {
     PdhOpenQuery(NULL, 0, &cpu_query);
-    std::string counter_path = "\\Process(" + std::to_string(pid) + ")\\% Processor Time";
-    PdhAddCounter(cpu_query, counter_path.c_str(), 0, &cpu_counter);
+    std::wstring counter_path = L"\\Process(" + std::to_wstring(pid) + L")\\% Processor Time";
+    PdhAddCounterW(cpu_query, counter_path.c_str(), 0, &cpu_counter);
     PdhCollectQueryData(cpu_query);
 }
 #else
@@ -161,17 +165,25 @@ std::string ServerMonitor::getStatusReport() const {
 
 int ServerMonitor::getThreadCount() {
     #ifdef _WIN32
-        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, pid);
-        if (hProcess == NULL) return 0;
-        
-        PROCESS_MEMORY_COUNTERS_EX pmc;
-        if (!GetProcessMemoryInfo(hProcess, (PROCESS_MEMORY_COUNTERS*)&pmc, sizeof(pmc))) {
-            CloseHandle(hProcess);
+        HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (snapshot == INVALID_HANDLE_VALUE) {
             return 0;
         }
-        
-        CloseHandle(hProcess);
-        return pmc.NumberOfThreads;
+
+        THREADENTRY32 te32;
+        te32.dwSize = sizeof(te32);
+        int threadCount = 0;
+
+        if (Thread32First(snapshot, &te32)) {
+            do {
+                if (te32.th32OwnerProcessID == pid) {
+                    threadCount++;
+                }
+            } while (Thread32Next(snapshot, &te32));
+        }
+
+        CloseHandle(snapshot);
+        return threadCount;
     #else
         std::string task_dir = "/proc/" + std::to_string(pid) + "/task";
         int count = 0;

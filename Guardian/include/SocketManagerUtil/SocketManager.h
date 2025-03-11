@@ -84,24 +84,102 @@ public:
         stopChildProcess();
     }
 
+    /**
+     * @brief stop server process
+     * 
+     */
     void stopChildProcess();
+
+    /**
+     * @brief handle signal from terminal or others,such as [kill -9] 
+     * 
+     * @param signum 
+     */
     static void signalHandler(int signum) { exit(signum); }
 
+    /**
+     * @brief initialize listening socket and write socket port into shared memory
+     * 
+     */
     void setupListeningSocket();
+    
+    /**
+     * @brief initialize socket address
+     * 
+     * @param sockfd file descriptor from socket()
+     */
     void initSocketAddr(int& fd);
+
+    /**
+     * @brief Get the random socket port from system
+     * 
+     * @param sockfd file descriptor from socket()
+     * @return [unsigned short] socket port
+     */
     unsigned short getLocalPort(int sockfd);
+
+    /**
+     * @brief initialize epoll 
+     * 
+     */
     void setupEpoll();
+
+    /**
+     * @brief handle epoll events
+     * 
+     */
     void handleEvents();
+
+    /**
+     * @brief start child process
+     * 
+     */
     void startChildProcess();
+
+    /**
+     * @brief handle epoll message from server process
+     * 
+     * @param action json action
+     * @param msg json message
+     */
     void handleAction(const std::string& action, const std::string& msg);
+
+    /**
+     * @brief handle start action, when receive start action from server process, start heartbeat
+     * 
+     * @param msg 
+     */
     void handleStart(const std::string& msg);
+
+    /**
+     * @brief handle stop action from server process
+     * 
+     * @param msg 
+     */
     void handleStop(const std::string& msg);
+
+    /**
+     * @brief convert enum action to string
+     * 
+     * @param action 
+     * @return [std::string] 
+     */
     std::string actionToString(Action action);
+
+    /**
+     * @brief send message by tcp socket
+     * 
+     * @param msg message to be sent
+     */
     void sendMessage(const std::string& msg);
+
+    /**
+     * @brief initialize connection monitor, watch the heartbeat status
+     * 
+     */
     void initializeConnectionMonitor();
 
 private:
-    // 调整成员变量顺序，与构造函数初始化列表顺序一致
     SOCKET_TYPE long_listening_fd;
     #ifdef __linux__
     int _epoll_fd;

@@ -165,7 +165,7 @@ void SocketManager::SocketManagerImpl::handleEvents() {
                 server_fds = connfd;
                 writeLog("New connection established.");
             } else {
-                // 处理客户端请求
+                // 处理服务端请求
                 int fd = events[i].data.fd;
                 char buffer[1024];
                 ssize_t numBytes = read(fd, buffer, sizeof(buffer) - 1);

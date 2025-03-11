@@ -32,7 +32,11 @@ static void writeLog(const std::string& message) {
         // 获取当前时间
         time_t now = time(nullptr);
         struct tm timeinfo;
-        localtime_r(&now, &timeinfo); // 使用线程安全版本的 localtime
+        #ifdef _WIN32
+            localtime_s(&timeinfo, &now);
+        #else
+            localtime_r(&now, &timeinfo);
+        #endif
 
         // 定义时间格式
         char buffer[20]; // 确保有足够的空间存储格式化后的时间字符串
@@ -49,19 +53,17 @@ static void writeLog(const std::string& message) {
 
 class SharedMemoryManager {
 public:
-    // 保持原有的构造函数接口不变
     SharedMemoryManager(const char* name, const size_t size)
         : shm_name(name)
         , shm_size(size)
         #ifdef _WIN32
-            , shm_handle(NULL)
+            , hMapFile(NULL)
             , shared_data(NULL)
         #else
             , shm_fd(-1)
             , shared_data(nullptr)
         #endif
     {
-        // 保持原有的初始化逻辑
         writeLog("SharedMemoryManager created with name: " + std::string(name));
     }
 
@@ -69,7 +71,6 @@ public:
         cleanupSharedMemory();
     }
 
-    // 保持原有的公共接口不变
     bool createSharedMemory();
     void writeData(const std::string& jsonStr);
     void cleanupSharedMemory();
@@ -79,7 +80,7 @@ private:
     size_t shm_size;
 
     #ifdef _WIN32
-        HANDLE shm_handle;
+        HANDLE hMapFile;
         LPVOID shared_data;
     #else
         int shm_fd;
